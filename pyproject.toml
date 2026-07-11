@@ -1,0 +1,19 @@
+[project]
+name = "clifford-noise-reduction"
+version = "0.1.0"
+description = "Clifford Noise Reduction (CliNR) in Stim"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.11.0",
+    "numpy>=2.5.1",
+    "stim>=1.16.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "jupyterlab>=4.6.1",
+    "nbmake>=1.5.5",
+    "pytest>=9.1.1",
+]
