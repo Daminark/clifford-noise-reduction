@@ -1,9 +1,12 @@
-"""CliNR_{1,r} circuit construction (arXiv:2407.06583, Lemma 1).
+"""CliNR_{t,r} circuit construction (arXiv:2407.06583, Theorem 1).
 
-Builds gate-teleportation circuits that apply a Clifford ``C`` through a
-resource state guarded by ``r`` random stabilizer checks. Circuits are exact
-at ``p = 0``; statistical estimation lives in the ``estimators`` module.
-Scope is ``t = 1`` only.
+Builds gate-teleportation circuits that apply a Clifford ``C`` through
+resource states guarded by ``r`` random stabilizer checks. The circuit is
+split into ``t`` chunks, each teleported through its own checked resource.
+All ``r`` checks of a chunk are measured before its resource is accepted or
+discarded; the scheme does not abort at the first nontrivial outcome.
+Circuits are exact at ``p = 0``, which is the correctness guarantee the test
+suite asserts.
 
 Register layout (``4n + 1`` qubits: four blocks of ``n`` plus one ancilla)::
 
@@ -13,9 +16,30 @@ Register layout (``4n + 1`` qubits: four blocks of ``n`` plus one ancilla)::
     ref [3n, 4n)     Choi witness -- not physical (test apparatus only)
     anc 4n           ancilla for stabilizer measurement
 
-Noise (Sec. II): ``p1`` after preps and single-qubit gates (DEPOLARIZE1),
-``p2`` after controlled-Paulis (DEPOLARIZE2), ``p_m`` for measurement flips
-(X error before ``M``); idle qubits noiseless.
+Noise (Sec. II) is carried by a :class:`~noise_models.NoiseModel`: ``p1``
+after single-qubit gates (DEPOLARIZE1), ``p2`` after controlled-Paulis
+(DEPOLARIZE2), ``p_m`` for measurement flips (the reported outcome of ``M``),
+and ``p_prep`` after preparations (X error); idle qubits noiseless.
+
+Three modelling choices depart from the paper and are counted as such by the
+analytic bounds:
+
+1. ``|+>`` is prepared as a reset followed by a Hadamard, two fault
+   locations, where the paper's Sec. II charges one. Blocks 2 and 3 therefore
+   contribute ``2n`` preparations plus ``n`` single-qubit locations per chunk
+   rather than ``2n`` locations total. Preparation error is a bit flip rather
+   than a depolarizing channel.
+2. The Pauli correction ``Q`` of Eq. (1) is tracked classically rather than
+   applied, so it is not a fault location. The paper charges ``n``.
+3. Checks are drawn uniformly from the resource stabilizer group by default,
+   as the proof of Theorem 1 requires, and so have weight up to ``2n``. The
+   paper's Sec. V numerics instead restrict to the weight-``(n+1)`` propagated
+   Bell stabilizers, available here via ``restricted_checks``. That family does
+   not carry the ``2^-r`` guarantee; it generates the group, so a fault escapes
+   one check with probability at most ``1 - 1/(3n)``.
+
+The Choi harness on ``ref`` is noiseless: it is measuring apparatus, not
+protocol, and does not appear in the bounds.
 """
 
 from __future__ import annotations
@@ -23,64 +47,110 @@ from __future__ import annotations
 import numpy as np
 import stim
 
+from noise_models import NoiseModel
+
 __all__ = [
     "blocks",
+    "gate_list",
     "stabilizer_gens",
+    "restricted_family",
     "random_stabilizer",
-    "build_clinr_1r",
+    "chunk_circuit",
+    "draw_checks",
+    "build_clinr_tr",
+    "build_direct",
 ]
 
+# Map Stim's Pauli codes (as returned by PauliString indexing) to letters.
 _PAULI_CHR = "IXYZ"
-_TWO_QUBIT_GATES = frozenset({"CX", "CY", "CZ", "CNOT", "SWAP", "ISWAP"})
+
+# Unitary gates whose tableau is the identity. These pad a chunk to full width
+# and are not fault locations. The test suite asserts this set is exhaustive.
+_IDENTITY_GATES = frozenset({"I", "II"})
+
+
+def _is_two_qubit(name: str) -> bool:
+    """Whether ``name`` is a two-qubit gate, according to Stim's gate data."""
+    return stim.gate_data(name).is_two_qubit_gate
 
 
 # ---------------------------------------------------------------------------
-# Noise injectors: each appends only noise, and nothing when its rate is 0.
+# Operation emitters: each appends its operation, and noise when the rate is
+# non-zero.
 # ---------------------------------------------------------------------------
-def _noise_after_gate(
-    circ: stim.Circuit, gate: str, targets: list[int], p1: float, p2: float
+def _prep_noisy(
+    circ: stim.Circuit, targets: list[int], noise: NoiseModel
 ) -> None:
-    """Append depolarizing noise following a unitary ``gate`` on ``targets``.
-
-    Stim fuses consecutive identical gate names into a single instruction, so
-    ``targets`` may contain several gates' worth of qubits. We therefore chunk
-    ``targets`` by the gate's arity and apply one depolarizing channel per gate:
-    DEPOLARIZE1 at rate ``p1`` for single-qubit gates, DEPOLARIZE2 at rate
-    ``p2`` for two-qubit gates.
-
-    Raises:
-        ValueError: if ``targets`` is not a whole number of gates wide.
-    """
-    width = 2 if gate in _TWO_QUBIT_GATES else 1
-    if len(targets) % width:
-        raise ValueError(
-            f"{gate!r} acts on {width} qubit(s) but got {len(targets)} targets"
-        )
-    channel = "DEPOLARIZE2" if width == 2 else "DEPOLARIZE1"
-    rate = p2 if width == 2 else p1
-    for i in range(0, len(targets), width):
-        circ.append(channel, targets[i : i + width], rate)
+    """Append ``R`` on ``targets`` followed by an ``X_ERROR`` at ``p_prep``."""
+    circ.append("R", targets)
+    if noise.p_prep > 0:
+        circ.append("X_ERROR", targets, noise.p_prep)
 
 
-def _noise_after_prep(circ: stim.Circuit, targets: list[int], p1: float) -> None:
-    """Append a single-qubit depolarizing error after preparing ``targets``."""
-    if p1 > 0:
-        circ.append("DEPOLARIZE1", targets, p1)
-
-
-def _noise_before_measure(circ: stim.Circuit, targets: list[int], p_m: float) -> None:
-    """Model measurement misreport as an X error just before a Z-basis ``M``."""
-    if p_m > 0:
-        circ.append("X_ERROR", targets, p_m)
+def _measure_noisy(
+    circ: stim.Circuit, targets: list[int], noise: NoiseModel
+) -> None:
+    """Append a ``Z``-basis ``M`` on ``targets`` whose outcome flips at ``p_m``."""
+    if noise.p_m > 0:
+        circ.append("M", targets, noise.p_m)
+    else:
+        circ.append("M", targets)
 
 
 def _apply_noisy(
-    circ: stim.Circuit, gate: str, targets: list[int], p1: float, p2: float
+    circ: stim.Circuit, gate: str, targets: list[int], noise: NoiseModel
 ) -> None:
-    """Append ``gate`` on ``targets`` immediately followed by its gate noise."""
+    """Append ``gate`` on ``targets`` followed by its depolarizing noise.
+
+    DEPOLARIZE1 at rate ``p1`` for single-qubit gates, DEPOLARIZE2 at rate
+    ``p2`` for two-qubit gates. ``targets`` may hold several fused gates; a
+    channel instruction broadcasts per gate, so it is passed through whole.
+    """
     circ.append(gate, targets)
-    if p1 or p2:
-        _noise_after_gate(circ, gate, targets, p1, p2)
+    two = _is_two_qubit(gate)
+    rate = noise.p2 if two else noise.p1
+    if rate > 0:
+        circ.append("DEPOLARIZE2" if two else "DEPOLARIZE1", targets, rate)
+
+
+# ---------------------------------------------------------------------------
+# Gate flattening
+# ---------------------------------------------------------------------------
+def gate_list(circuit: stim.Circuit) -> list[tuple[str, list[int]]]:
+    """Flatten ``circuit`` into one entry per gate, as ``(name, targets)``.
+
+    Fused instructions are split by the gate's arity into individual gates.
+    Identity gates are dropped, as are annotations (instructions with no state
+    effect, no measurement record and no error): neither is a fault location.
+
+    Raises:
+        ValueError: if an instruction is an operation other than a unitary
+            gate, if a gate is neither single- nor two-qubit, or if any of its
+            targets is not a bare qubit.
+    """
+    gates: list[tuple[str, list[int]]] = []
+    for inst in circuit.flattened():
+        if inst.name in _IDENTITY_GATES:
+            continue
+        data = stim.gate_data(inst.name)
+        if not data.is_unitary:
+            if data.is_noisy_gate or data.produces_measurements or data.is_reset:
+                raise ValueError(f"{inst.name!r} is not a unitary gate")
+            continue
+        if not (data.is_single_qubit_gate or data.is_two_qubit_gate):
+            raise ValueError(
+                f"{inst.name!r} is neither a single- nor a two-qubit gate"
+            )
+        raw = inst.targets_copy()
+        if not all(target.is_qubit_target for target in raw):
+            raise ValueError(f"{inst.name!r} has a non-qubit target")
+        targets = [target.value for target in raw]
+        width = 2 if _is_two_qubit(inst.name) else 1
+        gates.extend(
+            (inst.name, targets[i : i + width])
+            for i in range(0, len(targets), width)
+        )
+    return gates
 
 
 # ---------------------------------------------------------------------------
@@ -121,41 +191,39 @@ def _pauli_to_mpp_targets(pauli: stim.PauliString) -> list:
     return targets
 
 
-def _apply_pauli_controlled(
-    circ: stim.Circuit, pauli: stim.PauliString, targets: list[int], rec: int
-) -> None:
-    """Apply ``pauli`` (raised to a measured bit) to ``targets``, classically.
+def _pad_to_width(circuit: stim.Circuit, n: int) -> stim.Circuit:
+    """Return ``circuit`` prefixed with an identity on all ``n`` qubits.
 
-    Each non-identity factor of ``pauli`` is applied as a Pauli controlled on
-    the measurement record ``rec``. The control is a *classical* measurement
-    outcome, so a global sign on ``pauli`` is an unobservable global phase and
-    is safely ignored.
+    Stim sizes a circuit's tableau by the highest qubit index it mentions, so
+    the padding pins the tableau to width ``n`` even when ``circuit`` leaves
+    some qubits untouched.
 
-    Args:
-        pauli: An ``n``-qubit Pauli whose ``j``-th factor acts on ``targets[j]``.
-        targets: Physical qubit indices, one per position of ``pauli``.
-        rec: Measurement-record offset (e.g. ``-1``) supplying the control bit.
+    Raises:
+        ValueError: if ``circuit`` acts on a qubit index of ``n`` or more.
     """
-    controlled = {1: "CX", 2: "CY", 3: "CZ"}
-    for j in range(len(pauli)):
-        code = pauli[j]
-        if code == 0:
-            continue
-        circ.append(controlled[code], [stim.target_rec(rec), targets[j]])
+    if circuit.num_qubits > n:
+        raise ValueError(
+            f"circuit acts on {circuit.num_qubits} qubits, exceeding n = {n}"
+        )
+    padded = stim.Circuit()
+    padded.append("I", list(range(n)))
+    padded += circuit
+    return padded
 
 
 # ---------------------------------------------------------------------------
 # Resource-state stabilizers
 # ---------------------------------------------------------------------------
 def stabilizer_gens(
-    tableau: stim.Tableau, n: int, b2: list[int], b3: list[int], total: int
+    tableau: stim.Tableau, n: int, bare: list[int], image: list[int], total: int
 ) -> list[stim.PauliString]:
-    """Generators of the resource-state stabilizer group, in closed form.
+    """Generators of the stabilizer group of ``(I ⊗ C)|Φ+⟩^{⊗n}``, in closed form.
 
-    The resource ``(I ⊗ C)|Φ+⟩^{⊗n}`` on blocks 2 and 3 is stabilized by the
-    Bell generators conjugated by ``C`` on block 3::
+    With ``n`` Bell pairs joining ``bare`` to ``image`` and ``C`` applied to
+    ``image``, the state is stabilized by the Bell generators conjugated by
+    ``C``::
 
-        X_{b2[i]} ⊗ (C X_i C†)_{b3}     and     Z_{b2[i]} ⊗ (C Z_i C†)_{b3}
+        X_{bare[i]} ⊗ (C X_i C†)_{image}   and   Z_{bare[i]} ⊗ (C Z_i C†)_{image}
 
     for ``i = 0, ..., n-1``, taken from the tableau. Signs are dropped: they do
     not affect measurement outcomes or the anticommutation that drives
@@ -164,7 +232,8 @@ def stabilizer_gens(
     Args:
         tableau: The tableau of the Clifford ``C``.
         n: Number of data qubits.
-        b2, b3: Index lists for blocks 2 and 3.
+        bare: Index list for the block ``C`` does not act on.
+        image: Index list for the block carrying ``C``.
         total: Full register width (length of each returned Pauli string).
 
     Returns:
@@ -174,27 +243,27 @@ def stabilizer_gens(
     for i in range(n):
         for base, conjugated in (("X", tableau.x_output(i)), ("Z", tableau.z_output(i))):
             letters = ["I"] * total
-            letters[b2[i]] = base
+            letters[bare[i]] = base
             for j in range(n):
-                letters[b3[j]] = _PAULI_CHR[conjugated[j]]
+                letters[image[j]] = _PAULI_CHR[conjugated[j]]
             gens.append(stim.PauliString("".join(letters)))
     return gens
 
 
 def random_stabilizer(
-    gens: list[stim.PauliString], total: int, rng: np.random.Generator
+    gens: list[stim.PauliString], rng: np.random.Generator
 ) -> stim.PauliString:
     """Sample a uniformly random *non-identity* element of ``⟨gens⟩``.
 
-    Each generator is included independently with probability 1/2, which samples
-    the group uniformly; the uniformity is what the detection guarantee relies
-    on, so preserve it if you change the sampling. The identity element is
-    rejected: it has no valid ``MPP`` targets and carries no information as a
-    check.
+    The stabilizer group is elementary abelian (``S ≅ F_2^{2n}`` with ``gens`` a
+    basis), so an independent fair coin per generator yields a uniform group
+    element. The identity element is rejected: it has no valid ``MPP`` targets
+    and carries no information as a check.
+
+    The returned Pauli has the width of ``gens``.
 
     Args:
         gens: Independent generators (as returned by :func:`stabilizer_gens`).
-        total: Register width, i.e. the length of the returned Pauli string.
         rng: A NumPy generator. Passing the generator (rather than a seed) lets
             a caller thread one stream through repeated draws so that the draws
             are independent; the explicit type is enforced to reject objects
@@ -202,9 +271,13 @@ def random_stabilizer(
 
     Raises:
         TypeError: if ``rng`` is not a ``numpy.random.Generator``.
+        ValueError: if ``gens`` is empty.
     """
     if not isinstance(rng, np.random.Generator):
         raise TypeError("rng must be a numpy.random.Generator")
+    if not gens:
+        raise ValueError("gens must not be empty")
+    total = len(gens[0])
     while True:
         take = rng.random(len(gens)) < 0.5
         product = stim.PauliString(total)
@@ -215,6 +288,28 @@ def random_stabilizer(
             return product
 
 
+def restricted_family(
+    tableau: stim.Tableau, n: int, bare: list[int], image: list[int], total: int
+) -> list[stim.PauliString]:
+    """The weight-``(n+1)`` check family used by the paper's Sec. V numerics.
+
+    The weight-2 Bell stabilizers propagated through ``I ⊗ C``: for each pair,
+    the images of ``XX``, ``ZZ`` and ``YY``. Propagation commutes with taking
+    products, so the third is the product of the first two, up to a phase that
+    nothing downstream reads.
+
+    Returns ``3n`` elements, each of weight 1 on ``bare`` and at most ``n`` on
+    ``image``, none of them the identity. Arguments are as in
+    :func:`stabilizer_gens`.
+    """
+    gens = stabilizer_gens(tableau, n, bare, image, total)
+    family: list[stim.PauliString] = []
+    for i in range(n):
+        gx, gz = gens[2 * i], gens[2 * i + 1]
+        family += [gx, gz, gx * gz]
+    return family
+
+
 # ---------------------------------------------------------------------------
 # Stabilizer-measurement gadget
 # ---------------------------------------------------------------------------
@@ -222,9 +317,7 @@ def _measure_stabilizer_noisy(
     circ: stim.Circuit,
     pauli: stim.PauliString,
     anc: int,
-    p1: float,
-    p2: float,
-    p_m: float,
+    noise: NoiseModel,
 ) -> None:
     """Measure ``pauli`` via a noisy ancilla-based gadget, appending one record.
 
@@ -233,130 +326,316 @@ def _measure_stabilizer_noisy(
     the faithful, noisy stand-in for Stim's idealized ``MPP``: a weight-``w``
     stabilizer costs ``~ w + 3`` noisy locations. Use ``MPP`` directly instead
     for an idealized, noiseless check.
+
+    Raises:
+        ValueError: if ``anc`` lies in the support of ``pauli``.
     """
+    if pauli[anc] != 0:
+        raise ValueError(
+            f"ancilla {anc} lies in the support of the measured stabilizer"
+        )
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
-    circ.append("R", [anc])
-    _noise_after_prep(circ, [anc], p1)
-    _apply_noisy(circ, "H", [anc], p1, p2)
+    _prep_noisy(circ, [anc], noise)
+    _apply_noisy(circ, "H", [anc], noise)
     for j in range(len(pauli)):
         code = pauli[j]
         if code == 0:
             continue
-        _apply_noisy(circ, controlled[code], [anc, j], p1, p2)
-    _apply_noisy(circ, "H", [anc], p1, p2)
-    _noise_before_measure(circ, [anc], p_m)
-    circ.append("M", [anc])
+        _apply_noisy(circ, controlled[code], [anc, j], noise)
+    _apply_noisy(circ, "H", [anc], noise)
+    _measure_noisy(circ, [anc], noise)
 
 
 # ---------------------------------------------------------------------------
 # CliNR_{1,r} circuit builder
 # ---------------------------------------------------------------------------
-def build_clinr_1r(
-    circuit: stim.Circuit,
-    n: int,
-    r: int,
-    p1: float,
-    p2: float,
-    p_m: float,
-    rng: np.random.Generator,
-    *,
-    noisy_checks: bool = True,
-) -> stim.Circuit:
-    """Build ``CliNR_{1,r}(C)`` with the Choi channel-test harness.
+def chunk_circuit(circuit: stim.Circuit, n: int, t: int) -> list[stim.Circuit]:
+    """Split ``circuit`` into ``t`` contiguous sub-circuits (the CliNR chunks).
 
-    The returned circuit teleports the data through a resource state carrying
-    ``C``, guarded by ``r`` random stabilizer checks, and includes the reference
-    register and observables needed to read out the logical error rate. It is a
-    pure stabilizer circuit and is exact at ``p1 = p2 = p_m = 0``.
+    The gate list of ``circuit`` (:func:`gate_list`, so identities are dropped
+    and fused instructions are split) is cut into ``t`` pieces of size
+    ``s0 = ceil(s/t)`` (the first ``s mod t`` chunks) and ``s0 - 1`` (the
+    rest), so the sizes sum to ``s``, matching the paper. Each chunk is padded
+    with an identity on all ``n`` qubits so that its tableau is full width
+    ``n`` even when the chunk's gates touch only some qubits.
+
+    Exactly ``t`` chunks are returned. If ``t`` exceeds the gate count the
+    surplus chunks are empty, and each still costs a full teleportation round.
 
     Args:
-        circuit: The Clifford circuit ``C`` to implement, over ``n`` qubits and
-            built from Clifford gates Stim recognizes (e.g. H, S, CX).
+        circuit: The Clifford circuit ``C`` to split.
         n: Number of data qubits.
-        r: Number of random stabilizer checks (``r = 0`` gives plain gate
-            teleportation with no error detection).
-        p1: Single-qubit / preparation depolarizing rate.
-        p2: Two-qubit depolarizing rate.
-        p_m: Measurement flip probability.
-        rng: NumPy generator used to draw the ``r`` random checks.
-        noisy_checks: If True (default), measure each check with the explicit
-            noisy ancilla gadget so measurement faults are modeled (faithful to
-            Lemma 1). If False, use Stim's idealized ``MPP``.
+        t: Number of chunks.
 
     Returns:
-        A ``stim.Circuit`` on ``4n + 1`` qubits with ``r`` detectors (the
-        checks) and ``2n`` observables (the Choi stabilizers).
+        A list of ``t`` sub-circuits whose concatenation equals ``circuit``.
 
-    Detectors and observables:
-        Each check is wrapped in a ``DETECTOR``; a fired detector marks a run to
-        be discarded (the "restart"). The ``2n`` Choi stabilizers are declared
-        via ``OBSERVABLE_INCLUDE``; a logical error is any observable flip among
-        accepted runs.
+    Raises:
+        ValueError: if ``n < 1``, ``t < 1``, or ``circuit`` acts on a qubit
+            index of ``n`` or more.
     """
-    tableau = circuit.to_tableau()
-    b1, b2, b3, ref, anc = blocks(n)
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
+    if t < 1:
+        raise ValueError(f"t must be at least 1, got {t}")
+    gates = gate_list(circuit)
+    s = len(gates)
+    s0 = -(-s // t)                       # ceil division
+    n_full = s % t or t                   # count of size-s0 chunks
+    chunks: list[stim.Circuit] = []
+    idx = 0
+    for k in range(t):
+        size = s0 if k < n_full else s0 - 1
+        sub = stim.Circuit()
+        for name, targets in gates[idx : idx + size]:
+            sub.append(name, targets)
+        chunks.append(_pad_to_width(sub, n))
+        idx += size
+    return chunks
+
+
+def draw_checks(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    rng: np.random.Generator,
+    *,
+    restricted_checks: bool = False,
+) -> list[list[stim.PauliString]]:
+    """Draw ``r`` checks for each of the ``t`` chunks of ``circuit``.
+
+    Each check is a length-``2n`` Pauli on the resource state of its chunk,
+    with positions ``[0, n)`` on the bare half and ``[n, 2n)`` on the half
+    carrying the chunk.
+
+    Args:
+        circuit: The Clifford circuit ``C`` over ``n`` qubits.
+        n: Number of data qubits.
+        t: Number of chunks.
+        r: Number of checks per chunk.
+        rng: NumPy generator, drawn from in chunk order.
+        restricted_checks: If True, draw uniformly from
+            :func:`restricted_family`; otherwise draw uniformly from the
+            non-identity elements of the full stabilizer group.
+
+    Returns:
+        ``t`` lists of ``r`` checks, in chunk order.
+
+    Raises:
+        ValueError: if ``r < 0``, or from :func:`chunk_circuit`.
+    """
+    if r < 0:
+        raise ValueError(f"r must be non-negative, got {r}")
+    bare, image = list(range(n)), list(range(n, 2 * n))
+    checks = []
+    for chunk in chunk_circuit(circuit, n, t):
+        tableau = chunk.to_tableau()
+        if restricted_checks:
+            family = restricted_family(tableau, n, bare, image, 2 * n)
+            checks.append(
+                [family[int(rng.integers(len(family)))] for _ in range(r)]
+            )
+        else:
+            gens = stabilizer_gens(tableau, n, bare, image, 2 * n)
+            checks.append([random_stabilizer(gens, rng) for _ in range(r)])
+    return checks
+
+
+def _embed(
+    check: stim.PauliString, bare: list[int], image: list[int], total: int
+) -> stim.PauliString:
+    """Place a length-``2n`` check onto the ``bare`` and ``image`` blocks."""
+    n = len(bare)
+    out = stim.PauliString(total)
+    for i in range(n):
+        out[bare[i]] = check[i]
+        out[image[i]] = check[n + i]
+    return out
+
+
+def build_direct(
+    circuit: stim.Circuit,
+    n: int,
+    noise: NoiseModel,
+) -> stim.Circuit:
+    """Build the direct implementation of ``C`` with the Choi channel test.
+
+    ``C`` is applied to the data block with circuit-level noise and no
+    teleportation, resource state, or checks. This is the baseline the CliNR
+    implementation is compared against.
+
+    Args:
+        circuit: The Clifford circuit ``C`` over ``n`` qubits.
+        n: Number of data qubits.
+        noise: The circuit-level error rates.
+
+    Returns:
+        A ``stim.Circuit`` with no detectors and ``2n`` observables, exact at
+        zero noise.
+
+    Raises:
+        ValueError: if ``n < 1``, or if ``circuit`` acts on more than ``n``
+            qubits.
+    """
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
+    full_tableau = _pad_to_width(circuit, n).to_tableau()
+    b1, _, _, ref, _ = blocks(n)
     total = 4 * n + 1
     out = stim.Circuit()
 
-    # --- Choi input: Bell-pair each reference qubit with its data qubit. ---
-    # This is the (noiseless, non-physical) measuring apparatus, not part of
-    # the protocol; it lets us test the channel for all inputs at once.
     for i in range(n):
         out.append("H", [ref[i]])
         out.append("CX", [ref[i], b1[i]])
 
-    # --- Protected region: prepare the resource state (I ⊗ C)|Φ+⟩^{⊗n}. ---
-    # Bell pairs across blocks 2 and 3, then C applied to block 3. All of this
-    # is noisy and is exactly what the stabilizer checks below protect.
-    for i in range(n):
-        out.append("R", [b2[i], b3[i]])
-        _noise_after_prep(out, [b2[i], b3[i]], p1)
-        _apply_noisy(out, "H", [b2[i]], p1, p2)
-        _apply_noisy(out, "CX", [b2[i], b3[i]], p1, p2)
-    for inst in circuit.flattened():
-        data_targets = [b3[t.value] for t in inst.targets_copy()]
-        _apply_noisy(out, inst.name, data_targets, p1, p2)
+    for name, targets in gate_list(circuit):
+        _apply_noisy(out, name, [b1[q] for q in targets], noise)
 
-    # --- Offline fault detection: r random stabilizer checks. ---
-    # Placed BEFORE the teleportation CNOTs so a detected fault only spoils the
-    # resource (a "restart"), never the data -- and so the measurement-record
-    # offsets used by the correction below stay fixed.
-    gens = stabilizer_gens(tableau, n, b2, b3, total)
-    for _ in range(r):
-        check = random_stabilizer(gens, total, rng)
-        if noisy_checks:
-            _measure_stabilizer_noisy(out, check, anc, p1, p2, p_m)
-        else:
-            out.append("MPP", _pauli_to_mpp_targets(check))
-        out.append("DETECTOR", [stim.target_rec(-1)])
+    for observable, gen in enumerate(
+        stabilizer_gens(full_tableau, n, ref, b1, total)
+    ):
+        out.append("MPP", _pauli_to_mpp_targets(gen))
+        out.append("OBSERVABLE_INCLUDE", [stim.target_rec(-1)], observable)
 
-    # --- Teleportation (unprotected): Bell-measure block 1 against block 2. ---
-    for i in range(n):
-        _apply_noisy(out, "CX", [b1[i], b2[i]], p1, p2)
-    for i in range(n):
-        _apply_noisy(out, "H", [b1[i]], p1, p2)
-    _noise_before_measure(out, b1 + b2, p_m)
-    out.append("M", b1)  # outcomes m0_i -> rec[-2n + i]
-    out.append("M", b2)  # outcomes m1_i -> rec[-n  + i]
+    return out
 
-    # --- Classically-controlled Pauli correction Q. ---
-    # The teleportation byproduct is C X^{m1} Z^{m0}; correcting it leaves C
-    # standing, with each factor read off the tableau as (C X_i C†), (C Z_i C†).
-    for i in range(n):
-        _apply_pauli_controlled(out, tableau.x_output(i), b3, -n + i)   # ^ m1_i
-        _apply_pauli_controlled(out, tableau.z_output(i), b3, -2 * n + i)  # ^ m0_i
 
-    # --- Choi observables: the 2n stabilizers of (I ⊗ C)|Φ+⟩ on (ref, b3). ---
-    # All 2n preserved  <=>  the implemented channel equals C.
-    observable = 0
+def build_clinr_tr(
+    circuit: stim.Circuit,
+    n: int,
+    checks: list[list[stim.PauliString]],
+    noise: NoiseModel,
+    *,
+    noisy_checks: bool = True,
+    noisy_q: bool = False,
+) -> stim.Circuit:
+    """Build ``CliNR_{t,r}(C)`` with the Choi channel-test harness.
+
+    ``C`` is split into ``t`` chunks (:func:`chunk_circuit`); each chunk is
+    applied by gate teleportation through its own checked resource state, and
+    the data is relabelled between chunks so that one chunk's output block feeds
+    the next chunk's input (a software swap, no gates). A single Choi harness
+    spans the whole chain: one reference register Bell-paired to the first
+    input, and one readout against the final output using the *full* circuit's
+    tableau. The result is a pure stabilizer circuit, exact at zero noise.
+    Passing ``t=1`` recovers the single-block scheme (Lemma 1).
+
+    The teleportation byproduct is tracked as a Pauli frame rather than
+    applied: each measurement record is associated with the Pauli it would
+    control, the frame is conjugated through each subsequent chunk, and the
+    records that anticommute with an observable are folded into it at readout.
+
+    Args:
+        circuit: The Clifford circuit ``C`` over ``n`` qubits.
+        n: Number of data qubits.
+        checks: One list of checks per chunk, in the format returned by
+            :func:`draw_checks`. The number of chunks ``t`` is
+            ``len(checks)``. Any stabilizers of the resource state give a
+            valid circuit; the bounds in :mod:`bounds` cover only the two
+            distributions :func:`draw_checks` implements.
+        noise: The circuit-level error rates.
+        noisy_checks: If True, measure checks with the explicit noisy gadget;
+            if False, use idealized ``MPP``.
+        noisy_q: If True, add a one-time depolarizing layer on the final data
+            block, modelling physical resolution of the tracked Pauli frame
+            into a live corrected state. Placed after all checks, so it never
+            triggers a restart. Left False, the frame is resolved for free at
+            readout.
+
+    Returns:
+        A ``stim.Circuit`` on ``4n + 1`` qubits with one detector per check, in
+        chunk order, and ``2n`` observables (the Choi stabilizers of the full
+        ``C``).
+
+    Raises:
+        ValueError: if a check does not have length ``2n``, is the identity,
+            or does not stabilize its chunk's resource state; or from
+            :func:`chunk_circuit`.
+    """
+    full_tableau = _pad_to_width(circuit, n).to_tableau()
+    chunks = chunk_circuit(circuit, n, len(checks))
+    b1, b2, b3, ref, anc = blocks(n)
+    total = 4 * n + 1
+    out = stim.Circuit()
+    frame: dict[int, stim.PauliString] = {}
+
+    # Choi input on (ref, b1): entangle each reference qubit with the first
+    # chunk's input. Noiseless -- this is measuring apparatus, not protocol.
     for i in range(n):
-        for base, conjugated in (("X", tableau.x_output(i)), ("Z", tableau.z_output(i))):
-            letters = ["I"] * total
-            letters[ref[i]] = base
-            for j in range(n):
-                letters[b3[j]] = _PAULI_CHR[conjugated[j]]
-            out.append("MPP", _pauli_to_mpp_targets(stim.PauliString("".join(letters))))
-            out.append("OBSERVABLE_INCLUDE", [stim.target_rec(-1)], observable)
-            observable += 1
+        out.append("H", [ref[i]])
+        out.append("CX", [ref[i], b1[i]])
+
+    data_in = b1  # block the current chunk reads its input from
+    for k, (chunk, chunk_checks) in enumerate(zip(chunks, checks)):
+        tableau = chunk.to_tableau()
+        gens = stabilizer_gens(
+            tableau, n, list(range(n)), list(range(n, 2 * n)), 2 * n
+        )
+        for check in chunk_checks:
+            if len(check) != 2 * n:
+                raise ValueError(
+                    f"chunk {k}: check has length {len(check)}, expected {2 * n}"
+                )
+            if check.weight == 0:
+                raise ValueError(f"chunk {k}: check is the identity")
+            if not all(check.commutes(g) for g in gens):
+                raise ValueError(
+                    f"chunk {k}: check {check} does not stabilize the resource"
+                )
+
+        # Protected region: prepare this chunk's resource (I x C_k)|Phi+>.
+        for i in range(n):
+            _prep_noisy(out, [b2[i], b3[i]], noise)
+            _apply_noisy(out, "H", [b2[i]], noise)
+            _apply_noisy(out, "CX", [b2[i], b3[i]], noise)
+        for name, targets in gate_list(chunk):
+            _apply_noisy(out, name, [b3[q] for q in targets], noise)
+
+        # Offline checks on this chunk's resource.
+        for logical in chunk_checks:
+            check = _embed(logical, b2, b3, total)
+            if noisy_checks:
+                _measure_stabilizer_noisy(out, check, anc, noise)
+            else:
+                out.append("MPP", _pauli_to_mpp_targets(check))
+            out.append("DETECTOR", [stim.target_rec(-1)])
+
+        # Teleport the data through this chunk: Bell-measure data_in vs b2.
+        for i in range(n):
+            _apply_noisy(out, "CX", [data_in[i], b2[i]], noise)
+        for i in range(n):
+            _apply_noisy(out, "H", [data_in[i]], noise)
+        frame = {index: tableau(pauli) for index, pauli in frame.items()}
+        base = out.num_measurements
+        _measure_noisy(out, data_in, noise)  # m0_i at absolute index base + i
+        _measure_noisy(out, b2, noise)       # m1_i at absolute index base + n + i
+        for i in range(n):
+            frame[base + n + i] = tableau.x_output(i)
+            frame[base + i] = tableau.z_output(i)
+
+        # Relabel: this chunk's output (b3) is the next chunk's input; reuse the
+        # spent input register as the next chunk's resource-output scratch.
+        data_in, b3 = b3, data_in
+
+    # Choi observables between ref and the final data block, using the full
+    # circuit's tableau: all 2n preserved  <=>  the channel equals C.
+    # Resolving the tracked frame into a live corrected state would apply one
+    # Pauli to the final block; its noise is a single depolarizing layer here,
+    # equivalent in distribution because depolarizing noise is Pauli-symmetric.
+    if noisy_q and noise.p1 > 0:
+        out.append("DEPOLARIZE1", data_in, noise.p1)
+
+    for observable, gen in enumerate(
+        stabilizer_gens(full_tableau, n, ref, data_in, total)
+    ):
+        out.append("MPP", _pauli_to_mpp_targets(gen))
+        # the generator's data-block part, back in logical indexing
+        conj = stim.PauliString([gen[q] for q in data_in])
+        targets = [stim.target_rec(-1)]
+        for index, pauli in frame.items():
+            if not pauli.commutes(conj):
+                targets.append(stim.target_rec(index - out.num_measurements))
+        out.append("OBSERVABLE_INCLUDE", targets, observable)
 
     return out
