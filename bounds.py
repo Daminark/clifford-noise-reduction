@@ -170,6 +170,12 @@ def _chunk_plog_bound(
     (:func:`_check_region`), and the teleportation (``n``, ``n``, ``2n``,
     ``0``). ``miss`` is the probability that one check fails to detect a
     damaging fault.
+
+    A fault in check ``i``'s own gadget can only be caught by checks
+    ``i+1..r``, so those faults contribute ``(1 - miss**r) / (1 - miss)``
+    times one check's fault probability. That factor is at most ``2`` for
+    uniform draws and at most ``3n/2`` for the restricted family, and it
+    vanishes at ``r = 0``.
     """
     prep = _prep_region(n, native_plus)
     prep_fault = fault_prob(noise, *_protected_counts(prep, s1, s2, _ZERO))
@@ -178,7 +184,8 @@ def _chunk_plog_bound(
     )
     teleport_fault = fault_prob(noise, n, n, 2 * n, 0)
 
-    numerator = prep_fault * miss**r + 2.0 * check_fault + teleport_fault
+    escapes = (1.0 - miss**r) / (1.0 - miss)
+    numerator = prep_fault * miss**r + check_fault * escapes + teleport_fault
     no_restart = _no_fault_prob(
         noise,
         *_protected_counts(
