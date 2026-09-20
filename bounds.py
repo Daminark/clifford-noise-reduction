@@ -138,9 +138,16 @@ def _protected_counts(
 
 
 def _detection(n: int, restricted_checks: bool) -> tuple[float, int]:
-    """``(miss, check_weight)`` for the selected check family."""
+    """``(miss, check_weight)`` for the selected check family.
+
+    Uniform draws from the full group detect a damaging fault with probability
+    exactly ``1/2``. The restricted family's ``3n`` elements come in triples
+    ``(gx, gz, gx gz)`` per Bell pair, and anticommutation is a homomorphism,
+    so a fault anticommutes with either none or exactly two of each triple:
+    one it is caught by at all, it is caught by at least ``2`` of the ``3n``.
+    """
     if restricted_checks:
-        return 1.0 - 1.0 / (3 * n), n + 1
+        return 1.0 - 2.0 / (3 * n), n + 1
     return 0.5, 2 * n
 
 
@@ -299,7 +306,7 @@ def plog_bound(
         restricted_checks: If True, price the weight-``(n+1)`` family of
             :func:`clinr.restricted_family`. That family generates the group
             but is not uniform in it, so the per-check miss probability is
-            bounded by ``1 - 1/(3n)`` rather than ``1/2``.
+            bounded by ``1 - 2/(3n)`` rather than ``1/2``.
         noisy_q: If True, add the one-time frame-resolution cost.
         native_plus: If True, price ``|+>`` as a single native preparation,
             the paper's Sec. II convention, dropping ``n`` single-qubit fault
@@ -417,8 +424,8 @@ def choose_tr(
             fault probability and ``floor`` the ``r``-independent part of the
             numerator, so under uniform draws (``miss = 1/2``) it is a base-2
             logarithm of small quantities and stays in single digits. Under
-            restricted draws ``miss = 1 - 1/(3n)``, which multiplies that
-            logarithm by about ``3n``; the default is already too small at
+            restricted draws ``miss = 1 - 2/(3n)``, which multiplies that
+            logarithm by about ``1.5n``; the default is already too small at
             ``n = 3``.
         noisy_checks: If True, charge each check the ancilla gadget's cost in
             both bounds.

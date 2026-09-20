@@ -36,7 +36,7 @@ analytic bounds:
    paper's Sec. V numerics instead restrict to the weight-``(n+1)`` propagated
    Bell stabilizers, available here via ``restricted_checks``. That family does
    not carry the ``2^-r`` guarantee; it generates the group, so a fault escapes
-   one check with probability at most ``1 - 1/(3n)``.
+   one check with probability at most ``1 - 2/(3n)``.
 
 The Choi harness on ``ref`` is noiseless: it is measuring apparatus, not
 protocol, and does not appear in the bounds.
