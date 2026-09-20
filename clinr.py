@@ -79,12 +79,20 @@ def _is_two_qubit(name: str) -> bool:
 # non-zero.
 # ---------------------------------------------------------------------------
 def _prep_noisy(
-    circ: stim.Circuit, targets: list[int], noise: NoiseModel
+    circ: stim.Circuit,
+    targets: list[int],
+    noise: NoiseModel,
+    *,
+    x_basis: bool = False,
 ) -> None:
-    """Append ``R`` on ``targets`` followed by an ``X_ERROR`` at ``p_prep``."""
-    circ.append("R", targets)
+    """Append a reset on ``targets`` followed by its error at ``p_prep``.
+
+    ``R`` with an ``X_ERROR`` by default; ``RX`` with a ``Z_ERROR`` when
+    ``x_basis``, each error being the reset's own failure mode.
+    """
+    circ.append("RX" if x_basis else "R", targets)
     if noise.p_prep > 0:
-        circ.append("X_ERROR", targets, noise.p_prep)
+        circ.append("Z_ERROR" if x_basis else "X_ERROR", targets, noise.p_prep)
 
 
 def _measure_noisy(
@@ -509,6 +517,7 @@ def build_clinr_tr(
     *,
     noisy_checks: bool = True,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> stim.Circuit:
     """Build ``CliNR_{t,r}(C)`` with the Choi channel-test harness.
 
@@ -542,6 +551,9 @@ def build_clinr_tr(
             into a live corrected state. Placed after all checks, so it never
             triggers a restart. Left False, the frame is resolved for free at
             readout.
+        native_plus: If True, prepare ``|+>`` with a single ``RX``, the
+            paper's Sec. II convention, dropping the ``n`` Hadamards per
+            chunk; if False, prepare it as ``R`` then ``H``.
 
     Returns:
         A ``stim.Circuit`` on ``4n + 1`` qubits with one detector per check, in
@@ -586,8 +598,12 @@ def build_clinr_tr(
 
         # Protected region: prepare this chunk's resource (I x C_k)|Phi+>.
         for i in range(n):
-            _prep_noisy(out, [b2[i], b3[i]], noise)
-            _apply_noisy(out, "H", [b2[i]], noise)
+            if native_plus:
+                _prep_noisy(out, [b2[i]], noise, x_basis=True)
+                _prep_noisy(out, [b3[i]], noise)
+            else:
+                _prep_noisy(out, [b2[i], b3[i]], noise)
+                _apply_noisy(out, "H", [b2[i]], noise)
             _apply_noisy(out, "CX", [b2[i], b3[i]], noise)
         for name, targets in gate_list(chunk):
             _apply_noisy(out, name, [b3[q] for q in targets], noise)

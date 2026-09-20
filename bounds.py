@@ -88,6 +88,9 @@ def fault_prob(
     return 1.0 - _no_fault_prob(noise, n1, n2, nm, n_prep)
 
 
+_ZERO = (0, 0, 0, 0)
+
+
 def _check_region(
     count: int, weight: int, noisy_checks: bool
 ) -> tuple[int, int, int, int]:
@@ -101,19 +104,33 @@ def _check_region(
     return (2 * count, weight, count, count) if noisy_checks else (0, 0, 0, 0)
 
 
+def _prep_region(n: int, native_plus: bool) -> tuple[int, int, int, int]:
+    """Operation counts ``(n1, n2, nm, n_prep)`` for one resource preparation.
+
+    ``2n`` resets and ``n`` controlled-Paulis either way. ``|+>`` costs ``n``
+    further single-qubit gates as ``R`` then ``H``, and none as a native
+    ``RX``.
+    """
+    return (0 if native_plus else n, n, 0, 2 * n)
+
+
 def _protected_counts(
-    n: int, s1: int, s2: int, checks: tuple[int, int, int, int]
+    prep: tuple[int, int, int, int],
+    s1: int,
+    s2: int,
+    checks: tuple[int, int, int, int],
 ) -> tuple[int, int, int, int]:
     """Operation counts for one chunk up to and including its last check.
 
     Args:
-        n: Number of data qubits.
+        prep: Counts for the resource preparation (:func:`_prep_region`).
         s1: Single-qubit gate count of the chunk.
         s2: Two-qubit gate count of the chunk.
         checks: Counts for all of the chunk's checks (:func:`_check_region`).
     """
+    p1, p2, pm, pp = prep
     c1, c2, cm, cp = checks
-    return (n + s1 + c1, n + s2 + c2, cm, 2 * n + cp)
+    return (p1 + s1 + c1, p2 + s2 + c2, pm + cm, pp + cp)
 
 
 def _detection(n: int, restricted_checks: bool) -> tuple[float, int]:
@@ -132,23 +149,28 @@ def _chunk_plog_bound(
     w: int,
     miss: float,
     noisy_checks: bool,
+    native_plus: bool,
 ) -> float:
     """Bound the logical error rate contributed by one chunk.
 
     Regions, for the circuit as built, as ``(n1, n2, nm, n_prep)``: preparation
-    and application of the chunk (``n + s1``, ``n + s2``, ``0``, ``2n``), each
-    of ``r`` checks (:func:`_check_region`), and the teleportation
-    (``n``, ``n``, ``2n``, ``0``). ``miss`` is the probability that one check
-    fails to detect a damaging fault.
+    (:func:`_prep_region`) together with application of the chunk
+    (``s1``, ``s2``, ``0``, ``0``), each of ``r`` checks
+    (:func:`_check_region`), and the teleportation (``n``, ``n``, ``2n``,
+    ``0``). ``miss`` is the probability that one check fails to detect a
+    damaging fault.
     """
-    prep_fault = fault_prob(noise, n + s1, n + s2, 0, 2 * n)
+    prep = _prep_region(n, native_plus)
+    prep_fault = fault_prob(noise, *_protected_counts(prep, s1, s2, _ZERO))
     check_fault = fault_prob(noise, *_check_region(1, w, noisy_checks))
     teleport_fault = fault_prob(noise, n, n, 2 * n, 0)
 
     numerator = prep_fault * miss**r + 2.0 * check_fault + teleport_fault
     no_restart = _no_fault_prob(
         noise,
-        *_protected_counts(n, s1, s2, _check_region(r, r * w, noisy_checks)),
+        *_protected_counts(
+            prep, s1, s2, _check_region(r, r * w, noisy_checks)
+        ),
     )
     if no_restart == 0.0:
         return math.inf
@@ -164,11 +186,14 @@ def _plog_from_counts(
     miss: float,
     noisy_checks: bool,
     noisy_q: bool,
+    native_plus: bool,
 ) -> float:
     """Sum the per-chunk bounds for chunks with the given gate counts."""
     total = 0.0
     for s1, s2 in counts:
-        total += _chunk_plog_bound(noise, n, s1, s2, r, w, miss, noisy_checks)
+        total += _chunk_plog_bound(
+            noise, n, s1, s2, r, w, miss, noisy_checks, native_plus
+        )
     if noisy_q:
         total += fault_prob(noise, n, 0, 0, 0)
     return total
@@ -177,6 +202,7 @@ def _plog_from_counts(
 def _overhead_from_parts(
     counts: list[tuple[int, int]],
     n: int,
+    prep: tuple[int, int, int, int],
     regions: list[tuple[int, int, int, int]],
     no_restarts: list[float],
     noisy_q: bool,
@@ -184,7 +210,9 @@ def _overhead_from_parts(
 ) -> float:
     """Expected operations per gate, given a per-chunk no-restart probability.
 
-    ``counts``, ``regions`` and ``no_restarts`` are in chunk order. The
+    ``prep`` is the resource preparation's counts (:func:`_prep_region`),
+    shared by every chunk. ``counts``, ``regions`` and ``no_restarts`` are in
+    chunk order. The
     no-restart probabilities may be bounded analytically or measured, which is
     the only difference between the analytic and empirical gate overheads.
 
@@ -197,7 +225,7 @@ def _overhead_from_parts(
     ):
         if no_restart == 0.0:
             return math.inf
-        ops = sum(_protected_counts(n, s1, s2, region))
+        ops = sum(_protected_counts(prep, s1, s2, region))
         expected += 4 * n + ops / no_restart
     if noisy_q:
         expected += n
@@ -212,17 +240,19 @@ def _overhead_from_counts(
     w: int,
     noisy_checks: bool,
     noisy_q: bool,
+    native_plus: bool,
     size: int,
 ) -> float:
     """Expected operations per gate for chunks with the given gate counts."""
+    prep = _prep_region(n, native_plus)
     region = _check_region(r, r * w, noisy_checks)
     regions = [region] * len(counts)
     no_restarts = [
-        _no_fault_prob(noise, *_protected_counts(n, s1, s2, region))
+        _no_fault_prob(noise, *_protected_counts(prep, s1, s2, region))
         for s1, s2 in counts
     ]
     return _overhead_from_parts(
-        counts, n, regions, no_restarts, noisy_q, size
+        counts, n, prep, regions, no_restarts, noisy_q, size
     )
 
 
@@ -236,6 +266,7 @@ def plog_bound(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> float:
     """Bound the logical error rate of ``CliNR_{t,r}`` applied to ``circuit``.
 
@@ -264,6 +295,10 @@ def plog_bound(
             but is not uniform in it, so the per-check miss probability is
             bounded by ``1 - 1/(3n)`` rather than ``1/2``.
         noisy_q: If True, add the one-time frame-resolution cost.
+        native_plus: If True, price ``|+>`` as a single native preparation,
+            the paper's Sec. II convention, dropping ``n`` single-qubit fault
+            locations per chunk; matching ``native_plus`` in
+            :func:`clinr.build_clinr_tr`.
 
     Returns:
         An upper bound on the logical error rate, not clipped to ``[0, 1]``.
@@ -280,7 +315,7 @@ def plog_bound(
     miss, w = _detection(n, restricted_checks)
     counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
     return _plog_from_counts(
-        counts, noise, n, r, w, miss, noisy_checks, noisy_q
+        counts, noise, n, r, w, miss, noisy_checks, noisy_q, native_plus
     )
 
 
@@ -294,6 +329,7 @@ def overhead_bound(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> float:
     """Bound the gate overhead of ``CliNR_{t,r}`` applied to ``circuit``.
 
@@ -318,6 +354,8 @@ def overhead_bound(
             the worst-case check weight drops from ``2n`` to ``n + 1``.
         noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
             frame into a live corrected state once at the end of the chain.
+        native_plus: If True, price ``|+>`` as a single native preparation,
+            dropping ``n`` operations per chunk.
 
     Returns:
         An upper bound on the expected gate overhead.
@@ -338,7 +376,7 @@ def overhead_bound(
 
     counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
     return _overhead_from_counts(
-        counts, noise, n, r, w, noisy_checks, noisy_q, size
+        counts, noise, n, r, w, noisy_checks, noisy_q, native_plus, size
     )
 
 
@@ -353,6 +391,7 @@ def choose_tr(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> tuple[int, int]:
     """Choose ``(t, r)`` minimizing the bound on the logical error rate.
 
@@ -380,6 +419,8 @@ def choose_tr(
         restricted_checks: If True, price the restricted check family in both bounds.
         noisy_q: If True, evaluate both bounds under one-time frame resolution,
             so the objective and the overhead constraint share the assumption.
+        native_plus: If True, price ``|+>`` as a single native preparation in
+            both bounds.
 
     Returns:
         The pair ``(t, r)`` with the smallest logical error rate bound among
@@ -404,11 +445,13 @@ def choose_tr(
         counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
         for r in range(0, r_max + 1):
             if _overhead_from_counts(
-                counts, noise, n, r, w, noisy_checks, noisy_q, size
+                counts, noise, n, r, w, noisy_checks, noisy_q, native_plus,
+                size,
             ) > max_overhead:
                 continue
             value = _plog_from_counts(
-                counts, noise, n, r, w, miss, noisy_checks, noisy_q
+                counts, noise, n, r, w, miss, noisy_checks, noisy_q,
+                native_plus,
             )
             if value < best_plog:
                 best_plog, best = value, (t, r)

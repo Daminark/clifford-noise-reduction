@@ -207,6 +207,7 @@ def estimate_clinr(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> Estimate:
     """Estimate the logical error rate of ``CliNR_{t,r}`` applied to ``circuit``.
 
@@ -227,6 +228,8 @@ def estimate_clinr(
             family instead of uniformly from the full stabilizer group.
         noisy_q: If True, resolve the tracked Pauli frame into a live corrected
             state once at the end of the chain, at its noise cost.
+        native_plus: If True, prepare ``|+>`` with a single ``RX`` rather than
+            ``R`` then ``H``.
 
     Returns:
         An :class:`Estimate` holding the counts.
@@ -240,7 +243,8 @@ def estimate_clinr(
         circuit, n, t, r, rng, restricted_checks=restricted_checks
     )
     built = clinr.build_clinr_tr(
-        circuit, n, checks, noise, noisy_checks=noisy_checks, noisy_q=noisy_q
+        circuit, n, checks, noise, noisy_checks=noisy_checks,
+        noisy_q=noisy_q, native_plus=native_plus,
     )
     per_chunk_checks = [len(c) for c in checks]
     accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
@@ -302,6 +306,7 @@ def sweep_clinr(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> list[Estimate]:
     """Estimate each of ``circuits`` under one set of parameters.
 
@@ -319,7 +324,7 @@ def sweep_clinr(
         estimate_clinr(
             c, n, t, r, noise, shots, rng,
             noisy_checks=noisy_checks, restricted_checks=restricted_checks,
-            noisy_q=noisy_q,
+            noisy_q=noisy_q, native_plus=native_plus,
         )
         for c in circuits
     ]
@@ -432,6 +437,7 @@ def mean_gate_overhead(
     *,
     noisy_checks: bool = True,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> float:
     """Mean of :func:`gate_overhead` over check-set draws.
 
@@ -447,7 +453,8 @@ def mean_gate_overhead(
     _comparable(estimates)
     overheads = [
         gate_overhead(
-            circuit, n, e, noisy_checks=noisy_checks, noisy_q=noisy_q
+            circuit, n, e, noisy_checks=noisy_checks, noisy_q=noisy_q,
+            native_plus=native_plus,
         )
         for e in estimates
     ]
@@ -461,6 +468,7 @@ def gate_overhead(
     *,
     noisy_checks: bool = True,
     noisy_q: bool = False,
+    native_plus: bool = False,
 ) -> float:
     """Estimate the gate overhead from an estimate's measured acceptance.
 
@@ -481,6 +489,8 @@ def gate_overhead(
             the value passed to :func:`estimate_clinr`.
         noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
             frame into a live corrected state once at the end of the chain.
+        native_plus: If True, charge ``|+>`` as a single native preparation.
+            Must match the value passed to :func:`estimate_clinr`.
 
     Returns:
         The estimated expected gate overhead.
@@ -514,6 +524,7 @@ def gate_overhead(
     return bounds._overhead_from_parts(
         counts,
         n,
+        bounds._prep_region(n, native_plus),
         regions,
         [a / estimate.shots for a in estimate.chunk_accepted],
         noisy_q,
