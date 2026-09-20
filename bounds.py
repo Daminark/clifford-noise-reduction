@@ -212,9 +212,9 @@ def _overhead_from_parts(
 
     ``prep`` is the resource preparation's counts (:func:`_prep_region`),
     shared by every chunk. ``counts``, ``regions`` and ``no_restarts`` are in
-    chunk order. The
-    no-restart probabilities may be bounded analytically or measured, which is
-    the only difference between the analytic and empirical gate overheads.
+    chunk order. The no-restart probabilities may be bounded analytically or
+    measured, which is the only difference between the analytic and empirical
+    gate overheads.
 
     Raises:
         ValueError: if the three sequences differ in length.
