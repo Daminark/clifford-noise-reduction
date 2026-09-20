@@ -92,16 +92,20 @@ _ZERO = (0, 0, 0, 0)
 
 
 def _check_region(
-    count: int, weight: int, noisy_checks: bool
+    count: int, weight: int, noisy_checks: bool, native_plus: bool
 ) -> tuple[int, int, int, int]:
     """Operation counts ``(n1, n2, nm, n_prep)`` for ``count`` checks.
 
     ``weight`` is the total weight of those checks: a weight-``w`` check is
-    measured by a gadget of ``2`` single-qubit gates, ``w`` controlled-Paulis,
-    one measurement and one preparation. An idealized check is a projective
-    measurement with no fault locations, so every count is zero.
+    measured by a gadget of one preparation, ``w`` controlled-Paulis, one
+    measurement, and two single-qubit gates, or one under ``native_plus``,
+    where an ``RX`` replaces the reset and the Hadamard that follows it. An
+    idealized check is a projective measurement with no fault locations, so
+    every count is zero.
     """
-    return (2 * count, weight, count, count) if noisy_checks else (0, 0, 0, 0)
+    if not noisy_checks:
+        return (0, 0, 0, 0)
+    return ((1 if native_plus else 2) * count, weight, count, count)
 
 
 def _prep_region(n: int, native_plus: bool) -> tuple[int, int, int, int]:
@@ -162,14 +166,16 @@ def _chunk_plog_bound(
     """
     prep = _prep_region(n, native_plus)
     prep_fault = fault_prob(noise, *_protected_counts(prep, s1, s2, _ZERO))
-    check_fault = fault_prob(noise, *_check_region(1, w, noisy_checks))
+    check_fault = fault_prob(
+        noise, *_check_region(1, w, noisy_checks, native_plus)
+    )
     teleport_fault = fault_prob(noise, n, n, 2 * n, 0)
 
     numerator = prep_fault * miss**r + 2.0 * check_fault + teleport_fault
     no_restart = _no_fault_prob(
         noise,
         *_protected_counts(
-            prep, s1, s2, _check_region(r, r * w, noisy_checks)
+            prep, s1, s2, _check_region(r, r * w, noisy_checks, native_plus)
         ),
     )
     if no_restart == 0.0:
@@ -245,7 +251,7 @@ def _overhead_from_counts(
 ) -> float:
     """Expected operations per gate for chunks with the given gate counts."""
     prep = _prep_region(n, native_plus)
-    region = _check_region(r, r * w, noisy_checks)
+    region = _check_region(r, r * w, noisy_checks, native_plus)
     regions = [region] * len(counts)
     no_restarts = [
         _no_fault_prob(noise, *_protected_counts(prep, s1, s2, region))

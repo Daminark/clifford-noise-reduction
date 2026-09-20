@@ -518,7 +518,7 @@ def gate_overhead(
     chunks = clinr.chunk_circuit(circuit, n, len(estimate.chunk_accepted))
     counts = [bounds.gate_counts(c) for c in chunks]
     regions = [
-        bounds._check_region(count, weight, noisy_checks)
+        bounds._check_region(count, weight, noisy_checks, native_plus)
         for count, weight in zip(estimate.chunk_checks, estimate.chunk_weight)
     ]
     return bounds._overhead_from_parts(

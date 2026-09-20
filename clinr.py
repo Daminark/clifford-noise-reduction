@@ -326,14 +326,25 @@ def _measure_stabilizer_noisy(
     pauli: stim.PauliString,
     anc: int,
     noise: NoiseModel,
+    *,
+    native_plus: bool = False,
 ) -> None:
     """Measure ``pauli`` via a noisy ancilla-based gadget, appending one record.
 
     Realizes the measurement as reset -> H -> (controlled-Pauli per support
     qubit) -> H -> measure, with circuit-level noise on every operation. This is
     the faithful, noisy stand-in for Stim's idealized ``MPP``: a weight-``w``
-    stabilizer costs ``~ w + 3`` noisy locations. Use ``MPP`` directly instead
-    for an idealized, noiseless check.
+    stabilizer costs ``w + 4`` locations, or ``w + 3`` with ``native_plus``,
+    where a single ``RX`` replaces the reset and the first Hadamard. Use
+    ``MPP`` directly instead for an idealized, noiseless check.
+
+    Args:
+        circ: Circuit to append to.
+        pauli: The stabilizer to measure.
+        anc: Ancilla index, outside the support of ``pauli``.
+        noise: The four rates.
+        native_plus: If True, prepare the ancilla in ``|+>`` with a single
+            ``RX`` rather than ``R`` then ``H``.
 
     Raises:
         ValueError: if ``anc`` lies in the support of ``pauli``.
@@ -343,8 +354,9 @@ def _measure_stabilizer_noisy(
             f"ancilla {anc} lies in the support of the measured stabilizer"
         )
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
-    _prep_noisy(circ, [anc], noise)
-    _apply_noisy(circ, "H", [anc], noise)
+    _prep_noisy(circ, [anc], noise, x_basis=native_plus)
+    if not native_plus:
+        _apply_noisy(circ, "H", [anc], noise)
     for j in range(len(pauli)):
         code = pauli[j]
         if code == 0:
@@ -551,9 +563,11 @@ def build_clinr_tr(
             into a live corrected state. Placed after all checks, so it never
             triggers a restart. Left False, the frame is resolved for free at
             readout.
-        native_plus: If True, prepare ``|+>`` with a single ``RX``, the
-            paper's Sec. II convention, dropping the ``n`` Hadamards per
-            chunk; if False, prepare it as ``R`` then ``H``.
+        native_plus: If True, prepare every ``|+>`` with a single ``RX``, the
+            paper's Sec. II convention: the ``n`` Hadamards per chunk and the
+            first Hadamard of each check gadget go away, bringing a check to
+            the paper's ``w + 3`` locations. If False, ``|+>`` is ``R`` then
+            ``H``.
 
     Returns:
         A ``stim.Circuit`` on ``4n + 1`` qubits with one detector per check, in
@@ -612,7 +626,9 @@ def build_clinr_tr(
         for logical in chunk_checks:
             check = _embed(logical, b2, b3, total)
             if noisy_checks:
-                _measure_stabilizer_noisy(out, check, anc, noise)
+                _measure_stabilizer_noisy(
+                    out, check, anc, noise, native_plus=native_plus
+                )
             else:
                 out.append("MPP", _pauli_to_mpp_targets(check))
             out.append("DETECTOR", [stim.target_rec(-1)])
