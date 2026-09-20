@@ -157,8 +157,7 @@ def _chunk_plog_bound(
     s1: int,
     s2: int,
     r: int,
-    w: int,
-    miss: float,
+    family: tuple[float, int],
     noisy_checks: bool,
     native_plus: bool,
 ) -> float:
@@ -168,8 +167,10 @@ def _chunk_plog_bound(
     (:func:`_prep_region`) together with application of the chunk
     (``s1``, ``s2``, ``0``, ``0``), each of ``r`` checks
     (:func:`_check_region`), and the teleportation (``n``, ``n``, ``2n``,
-    ``0``). ``miss`` is the probability that one check fails to detect a
-    damaging fault.
+    ``0``). ``family`` is ``(miss, w)`` from :func:`_detection`: the
+    probability that one check fails to detect a damaging fault, and the
+    worst-case check weight. They travel together so that a miss probability
+    cannot be paired with another family's weight.
 
     A fault in check ``i``'s own gadget can only be caught by checks
     ``i+1..r``, so those faults contribute ``(1 - miss**r) / (1 - miss)``
@@ -177,24 +178,29 @@ def _chunk_plog_bound(
     uniform draws and at most ``3n/2`` for the restricted family, and it
     vanishes at ``r = 0``.
     """
+    miss, w = family
     prep = _prep_region(n, native_plus)
-    prep_fault = fault_prob(noise, *_protected_counts(prep, s1, s2, _ZERO))
+    resource_fault = fault_prob(
+        noise, *_protected_counts(prep, s1, s2, _ZERO)
+    )
     check_fault = fault_prob(
         noise, *_check_region(1, w, noisy_checks, native_plus)
     )
     teleport_fault = fault_prob(noise, n, n, 2 * n, 0)
 
     escapes = (1.0 - miss**r) / (1.0 - miss)
-    numerator = prep_fault * miss**r + check_fault * escapes + teleport_fault
-    no_restart = _no_fault_prob(
+    numerator = (
+        resource_fault * miss**r + check_fault * escapes + teleport_fault
+    )
+    no_fault = _no_fault_prob(
         noise,
         *_protected_counts(
             prep, s1, s2, _check_region(r, r * w, noisy_checks, native_plus)
         ),
     )
-    if no_restart == 0.0:
+    if no_fault == 0.0:
         return math.inf
-    return numerator / no_restart
+    return numerator / no_fault
 
 
 def _plog_from_counts(
@@ -202,8 +208,7 @@ def _plog_from_counts(
     noise: NoiseModel,
     n: int,
     r: int,
-    w: int,
-    miss: float,
+    family: tuple[float, int],
     noisy_checks: bool,
     noisy_q: bool,
     native_plus: bool,
@@ -212,7 +217,7 @@ def _plog_from_counts(
     total = 0.0
     for s1, s2 in counts:
         total += _chunk_plog_bound(
-            noise, n, s1, s2, r, w, miss, noisy_checks, native_plus
+            noise, n, s1, s2, r, family, noisy_checks, native_plus
         )
     if noisy_q:
         total += fault_prob(noise, n, 0, 0, 0)
@@ -332,10 +337,10 @@ def plog_bound(
         raise ValueError(f"n must be at least 1, got {n}")
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
-    miss, w = _detection(n, restricted_checks)
+    family = _detection(n, restricted_checks)
     counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
     return _plog_from_counts(
-        counts, noise, n, r, w, miss, noisy_checks, noisy_q, native_plus
+        counts, noise, n, r, family, noisy_checks, noisy_q, native_plus
     )
 
 
@@ -458,7 +463,8 @@ def choose_tr(
     if upper_t < 1:
         raise ValueError(f"t_max must be at least 1, got {upper_t}")
 
-    miss, w = _detection(n, restricted_checks)
+    family = _detection(n, restricted_checks)
+    _, w = family
     best: tuple[int, int] | None = None
     best_plog = float("inf")
     for t in range(1, upper_t + 1):
@@ -470,7 +476,7 @@ def choose_tr(
             ) > max_overhead:
                 continue
             value = _plog_from_counts(
-                counts, noise, n, r, w, miss, noisy_checks, noisy_q,
+                counts, noise, n, r, family, noisy_checks, noisy_q,
                 native_plus,
             )
             if value < best_plog:
