@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 import stim
 
-import bounds
+import accounting
 import clinr
 from noise_models import NoiseModel
 
@@ -248,7 +248,7 @@ def estimate_clinr(
     )
     per_chunk_checks = [len(c) for c in checks]
     accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
-    s1, s2 = bounds.gate_counts(circuit)
+    s1, s2 = accounting.gate_counts(circuit)
     return Estimate(
         shots,
         accepted,
@@ -290,7 +290,7 @@ def estimate_direct(
         raise ValueError(f"shots must be positive, got {shots}")
     built = clinr.build_direct(circuit, n, noise)
     accepted, errors, _ = _tally(built, shots, rng, [])
-    s1, s2 = bounds.gate_counts(circuit)
+    s1, s2 = accounting.gate_counts(circuit)
     return Estimate(shots, accepted, errors, s1, s2)
 
 
@@ -516,15 +516,15 @@ def gate_overhead(
         )
 
     chunks = clinr.chunk_circuit(circuit, n, len(estimate.chunk_accepted))
-    counts = [bounds.gate_counts(c) for c in chunks]
+    counts = [accounting.gate_counts(c) for c in chunks]
     regions = [
-        bounds._check_region(count, weight, noisy_checks, native_plus)
+        accounting.check_region(count, weight, noisy_checks, native_plus)
         for count, weight in zip(estimate.chunk_checks, estimate.chunk_weight)
     ]
-    return bounds._overhead_from_parts(
+    return accounting.expected_overhead(
         counts,
         n,
-        bounds._prep_region(n, native_plus),
+        accounting.prep_region(n, native_plus),
         regions,
         [a / estimate.shots for a in estimate.chunk_accepted],
         noisy_q,

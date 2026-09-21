@@ -20,35 +20,16 @@ import math
 
 import stim
 
+import accounting
 import clinr
 from noise_models import NoiseModel
 
 __all__ = [
-    "gate_counts",
     "fault_prob",
     "plog_bound",
     "overhead_bound",
     "choose_tr",
 ]
-
-
-def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
-    """Return ``(s1, s2)``, the single- and two-qubit gate counts.
-
-    Counted over :func:`clinr.gate_list`, so identities are ignored and fused
-    instructions are split.
-
-    Raises:
-        ValueError: propagated from :func:`clinr.gate_list` if an instruction
-            is malformed.
-    """
-    s1 = s2 = 0
-    for _, targets in clinr.gate_list(circuit):
-        if len(targets) == 2:
-            s2 += 1
-        else:
-            s1 += 1
-    return s1, s2
 
 
 def _no_fault_prob(
@@ -88,55 +69,6 @@ def fault_prob(
     return 1.0 - _no_fault_prob(noise, n1, n2, nm, n_prep)
 
 
-_ZERO = (0, 0, 0, 0)
-
-
-def _check_region(
-    count: int, weight: int, noisy_checks: bool, native_plus: bool
-) -> tuple[int, int, int, int]:
-    """Operation counts ``(n1, n2, nm, n_prep)`` for ``count`` checks.
-
-    ``weight`` is the total weight of those checks: a weight-``w`` check is
-    measured by a gadget of one preparation, ``w`` controlled-Paulis, one
-    measurement, and two single-qubit gates, or one under ``native_plus``,
-    where an ``RX`` replaces the reset and the Hadamard that follows it. An
-    idealized check is a projective measurement with no fault locations, so
-    every count is zero.
-    """
-    if not noisy_checks:
-        return (0, 0, 0, 0)
-    return ((1 if native_plus else 2) * count, weight, count, count)
-
-
-def _prep_region(n: int, native_plus: bool) -> tuple[int, int, int, int]:
-    """Operation counts ``(n1, n2, nm, n_prep)`` for one resource preparation.
-
-    ``2n`` resets and ``n`` controlled-Paulis either way. ``|+>`` costs ``n``
-    further single-qubit gates as ``R`` then ``H``, and none as a native
-    ``RX``.
-    """
-    return (0 if native_plus else n, n, 0, 2 * n)
-
-
-def _protected_counts(
-    prep: tuple[int, int, int, int],
-    s1: int,
-    s2: int,
-    checks: tuple[int, int, int, int],
-) -> tuple[int, int, int, int]:
-    """Operation counts for one chunk up to and including its last check.
-
-    Args:
-        prep: Counts for the resource preparation (:func:`_prep_region`).
-        s1: Single-qubit gate count of the chunk.
-        s2: Two-qubit gate count of the chunk.
-        checks: Counts for all of the chunk's checks (:func:`_check_region`).
-    """
-    p1, p2, pm, pp = prep
-    c1, c2, cm, cp = checks
-    return (p1 + s1 + c1, p2 + s2 + c2, pm + cm, pp + cp)
-
-
 def _detection(n: int, restricted_checks: bool) -> tuple[float, int]:
     """``(miss, check_weight)`` for the selected check family.
 
@@ -163,11 +95,9 @@ def _chunk_plog_bound(
 ) -> float:
     """Bound the logical error rate contributed by one chunk.
 
-    Regions, for the circuit as built, as ``(n1, n2, nm, n_prep)``: preparation
-    (:func:`_prep_region`) together with application of the chunk
-    (``s1``, ``s2``, ``0``, ``0``), each of ``r`` checks
-    (:func:`_check_region`), and the teleportation (``n``, ``n``, ``2n``,
-    ``0``). ``family`` is ``(miss, w)`` from :func:`_detection`: the
+    Regions are those of :mod:`accounting`: the resource preparation together
+    with the chunk's own gates, each of ``r`` checks, and the teleportation.
+    ``family`` is ``(miss, w)`` from :func:`_detection`: the
     probability that one check fails to detect a damaging fault, and the
     worst-case check weight. They travel together so that a miss probability
     cannot be paired with another family's weight.
@@ -179,24 +109,21 @@ def _chunk_plog_bound(
     vanishes at ``r = 0``.
     """
     miss, w = family
-    prep = _prep_region(n, native_plus)
-    resource_fault = fault_prob(
-        noise, *_protected_counts(prep, s1, s2, _ZERO)
-    )
+    prep = accounting.prep_region(n, native_plus)
+    resource = accounting.add(prep, (s1, s2, 0, 0))
+    resource_fault = fault_prob(noise, *resource)
     check_fault = fault_prob(
-        noise, *_check_region(1, w, noisy_checks, native_plus)
+        noise, *accounting.check_region(1, w, noisy_checks, native_plus)
     )
-    teleport_fault = fault_prob(noise, n, n, 2 * n, 0)
+    teleport_fault = fault_prob(noise, *accounting.teleport_region(n))
 
     escapes = (1.0 - miss**r) / (1.0 - miss)
     numerator = (
         resource_fault * miss**r + check_fault * escapes + teleport_fault
     )
+    checks = accounting.check_region(r, r * w, noisy_checks, native_plus)
     no_fault = _no_fault_prob(
-        noise,
-        *_protected_counts(
-            prep, s1, s2, _check_region(r, r * w, noisy_checks, native_plus)
-        ),
+        noise, *accounting.protected_region(prep, s1, s2, checks)
     )
     if no_fault == 0.0:
         return math.inf
@@ -220,41 +147,8 @@ def _plog_from_counts(
             noise, n, s1, s2, r, family, noisy_checks, native_plus
         )
     if noisy_q:
-        total += fault_prob(noise, n, 0, 0, 0)
+        total += fault_prob(noise, *accounting.frame_region(n))
     return total
-
-
-def _overhead_from_parts(
-    counts: list[tuple[int, int]],
-    n: int,
-    prep: tuple[int, int, int, int],
-    regions: list[tuple[int, int, int, int]],
-    no_restarts: list[float],
-    noisy_q: bool,
-    size: int,
-) -> float:
-    """Expected operations per gate, given a per-chunk no-restart probability.
-
-    ``prep`` is the resource preparation's counts (:func:`_prep_region`),
-    shared by every chunk. ``counts``, ``regions`` and ``no_restarts`` are in
-    chunk order. The no-restart probabilities may be bounded analytically or
-    measured, which is the only difference between the analytic and empirical
-    gate overheads.
-
-    Raises:
-        ValueError: if the three sequences differ in length.
-    """
-    expected = 0.0
-    for (s1, s2), region, no_restart in zip(
-        counts, regions, no_restarts, strict=True
-    ):
-        if no_restart == 0.0:
-            return math.inf
-        ops = sum(_protected_counts(prep, s1, s2, region))
-        expected += 4 * n + ops / no_restart
-    if noisy_q:
-        expected += n
-    return expected / size
 
 
 def _overhead_from_counts(
@@ -268,16 +162,22 @@ def _overhead_from_counts(
     native_plus: bool,
     size: int,
 ) -> float:
-    """Expected operations per gate for chunks with the given gate counts."""
-    prep = _prep_region(n, native_plus)
-    region = _check_region(r, r * w, noisy_checks, native_plus)
-    regions = [region] * len(counts)
-    no_restarts = [
-        _no_fault_prob(noise, *_protected_counts(prep, s1, s2, region))
+    """Bound the expected operations per gate for chunks with these counts.
+
+    Every chunk is charged worst-case check weight, and its acceptance
+    probability is replaced by the probability that nothing in its protected
+    region faults, which is a lower bound on it.
+    """
+    prep = accounting.prep_region(n, native_plus)
+    checks = accounting.check_region(r, r * w, noisy_checks, native_plus)
+    no_fault = [
+        _no_fault_prob(
+            noise, *accounting.protected_region(prep, s1, s2, checks)
+        )
         for s1, s2 in counts
     ]
-    return _overhead_from_parts(
-        counts, n, prep, regions, no_restarts, noisy_q, size
+    return accounting.expected_overhead(
+        counts, n, prep, [checks] * len(counts), no_fault, noisy_q, size
     )
 
 
@@ -338,7 +238,8 @@ def plog_bound(
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     family = _detection(n, restricted_checks)
-    counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
+    chunks = clinr.chunk_circuit(circuit, n, t)
+    counts = [accounting.gate_counts(c) for c in chunks]
     return _plog_from_counts(
         counts, noise, n, r, family, noisy_checks, noisy_q, native_plus
     )
@@ -394,12 +295,13 @@ def overhead_bound(
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     _, w = _detection(n, restricted_checks)
-    s1_all, s2_all = gate_counts(circuit)
+    s1_all, s2_all = accounting.gate_counts(circuit)
     size = s1_all + s2_all
     if size == 0:
         raise ValueError("circuit must contain at least one gate")
 
-    counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
+    chunks = clinr.chunk_circuit(circuit, n, t)
+    counts = [accounting.gate_counts(c) for c in chunks]
     return _overhead_from_counts(
         counts, noise, n, r, w, noisy_checks, noisy_q, native_plus, size
     )
@@ -457,7 +359,7 @@ def choose_tr(
     """
     if r_max < 0:
         raise ValueError(f"r_max must be non-negative, got {r_max}")
-    s1_all, s2_all = gate_counts(circuit)
+    s1_all, s2_all = accounting.gate_counts(circuit)
     size = s1_all + s2_all
     upper_t = size if t_max is None else t_max
     if upper_t < 1:
@@ -468,7 +370,8 @@ def choose_tr(
     best: tuple[int, int] | None = None
     best_plog = float("inf")
     for t in range(1, upper_t + 1):
-        counts = [gate_counts(c) for c in clinr.chunk_circuit(circuit, n, t)]
+        chunks = clinr.chunk_circuit(circuit, n, t)
+        counts = [accounting.gate_counts(c) for c in chunks]
         for r in range(0, r_max + 1):
             if _overhead_from_counts(
                 counts, noise, n, r, w, noisy_checks, noisy_q, native_plus,
