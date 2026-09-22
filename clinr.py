@@ -79,20 +79,12 @@ def _is_two_qubit(name: str) -> bool:
 # non-zero.
 # ---------------------------------------------------------------------------
 def _prep_noisy(
-    circ: stim.Circuit,
-    targets: list[int],
-    noise: NoiseModel,
-    *,
-    x_basis: bool = False,
+    circ: stim.Circuit, targets: list[int], noise: NoiseModel
 ) -> None:
-    """Append a reset on ``targets`` followed by its error at ``p_prep``.
-
-    ``R`` with an ``X_ERROR`` by default; ``RX`` with a ``Z_ERROR`` when
-    ``x_basis``, each error being the reset's own failure mode.
-    """
-    circ.append("RX" if x_basis else "R", targets)
+    """Append ``R`` on ``targets`` followed by an ``X_ERROR`` at ``p_prep``."""
+    circ.append("R", targets)
     if noise.p_prep > 0:
-        circ.append("Z_ERROR" if x_basis else "X_ERROR", targets, noise.p_prep)
+        circ.append("X_ERROR", targets, noise.p_prep)
 
 
 def _measure_noisy(
@@ -119,6 +111,28 @@ def _apply_noisy(
     rate = noise.p2 if two else noise.p1
     if rate > 0:
         circ.append("DEPOLARIZE2" if two else "DEPOLARIZE1", targets, rate)
+
+
+def _prep_plus_noisy(
+    circ: stim.Circuit,
+    targets: list[int],
+    noise: NoiseModel,
+    *,
+    native_plus: bool,
+) -> None:
+    """Prepare ``targets`` in ``|+>``, by whichever convention is in force.
+
+    ``RX`` followed by a ``Z_ERROR`` at ``p_prep`` when ``native_plus``, one
+    fault location; otherwise ``R`` then ``H``, two locations, with the reset
+    error a bit flip and the Hadamard depolarizing.
+    """
+    if native_plus:
+        circ.append("RX", targets)
+        if noise.p_prep > 0:
+            circ.append("Z_ERROR", targets, noise.p_prep)
+    else:
+        _prep_noisy(circ, targets, noise)
+        _apply_noisy(circ, "H", targets, noise)
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +368,7 @@ def _measure_stabilizer_noisy(
             f"ancilla {anc} lies in the support of the measured stabilizer"
         )
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
-    _prep_noisy(circ, [anc], noise, x_basis=native_plus)
-    if not native_plus:
-        _apply_noisy(circ, "H", [anc], noise)
+    _prep_plus_noisy(circ, [anc], noise, native_plus=native_plus)
     for j in range(len(pauli)):
         code = pauli[j]
         if code == 0:
@@ -552,9 +564,9 @@ def build_clinr_tr(
         n: Number of data qubits.
         checks: One list of ``r`` checks per chunk, the same ``r`` for every
             chunk, in the format returned by :func:`draw_checks`. The number
-            of chunks ``t`` is ``len(checks)``. Any stabilizers of the resource state give a
-            valid circuit; the bounds in :mod:`bounds` cover only the two
-            distributions :func:`draw_checks` implements.
+            of chunks ``t`` is ``len(checks)``. Any stabilizers of the
+            resource state give a valid circuit; the bounds in :mod:`bounds`
+            cover only the two distributions :func:`draw_checks` implements.
         noise: The circuit-level error rates.
         noisy_checks: If True, measure checks with the explicit noisy gadget;
             if False, use idealized ``MPP``.
@@ -618,12 +630,8 @@ def build_clinr_tr(
 
         # Protected region: prepare this chunk's resource (I x C_k)|Phi+>.
         for i in range(n):
-            if native_plus:
-                _prep_noisy(out, [b2[i]], noise, x_basis=True)
-                _prep_noisy(out, [b3[i]], noise)
-            else:
-                _prep_noisy(out, [b2[i], b3[i]], noise)
-                _apply_noisy(out, "H", [b2[i]], noise)
+            _prep_plus_noisy(out, [b2[i]], noise, native_plus=native_plus)
+            _prep_noisy(out, [b3[i]], noise)
             _apply_noisy(out, "CX", [b2[i], b3[i]], noise)
         for name, targets in gate_list(chunk):
             _apply_noisy(out, name, [b3[q] for q in targets], noise)
