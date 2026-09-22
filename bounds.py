@@ -160,7 +160,6 @@ def _overhead_from_counts(
     noisy_checks: bool,
     noisy_q: bool,
     native_plus: bool,
-    size: int,
 ) -> float:
     """Bound the expected operations per gate for chunks with these counts.
 
@@ -177,7 +176,7 @@ def _overhead_from_counts(
         for s1, s2 in counts
     ]
     return accounting.expected_overhead(
-        counts, n, prep, [checks] * len(counts), no_fault, noisy_q, size
+        counts, n, prep, [checks] * len(counts), no_fault, noisy_q
     )
 
 
@@ -295,15 +294,10 @@ def overhead_bound(
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     _, w = _detection(n, restricted_checks)
-    s1_all, s2_all = accounting.gate_counts(circuit)
-    size = s1_all + s2_all
-    if size == 0:
-        raise ValueError("circuit must contain at least one gate")
-
     chunks = clinr.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(c) for c in chunks]
     return _overhead_from_counts(
-        counts, noise, n, r, w, noisy_checks, noisy_q, native_plus, size
+        counts, noise, n, r, w, noisy_checks, noisy_q, native_plus
     )
 
 
@@ -374,8 +368,7 @@ def choose_tr(
         counts = [accounting.gate_counts(c) for c in chunks]
         for r in range(0, r_max + 1):
             if _overhead_from_counts(
-                counts, noise, n, r, w, noisy_checks, noisy_q, native_plus,
-                size,
+                counts, noise, n, r, w, noisy_checks, noisy_q, native_plus
             ) > max_overhead:
                 continue
             value = _plog_from_counts(

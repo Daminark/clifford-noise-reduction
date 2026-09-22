@@ -123,16 +123,17 @@ def expected_overhead(
     check_regions: list[Region],
     acceptance: list[float],
     noisy_q: bool,
-    size: int,
 ) -> float:
     """Expected operations per gate, given each chunk's acceptance probability.
 
     Every attempt runs all of its chunk's checks, so an attempt at chunk ``k``
     costs exactly ``m_k`` operations and the number of attempts is geometric
     with mean ``1 / q_k``. Each chunk also pays its teleportation once, and
-    frame resolution is paid once for the chain when ``noisy_q``. The
-    acceptance probabilities may be bounded analytically or measured, which is
-    the only difference between the analytic and empirical gate overheads.
+    frame resolution is paid once for the chain when ``noisy_q``. The total is
+    divided by the number of gates across the chunks, which is the size of the
+    circuit they came from. The acceptance probabilities may be bounded
+    analytically or measured, which is the only difference between the
+    analytic and empirical gate overheads.
 
     Args:
         counts: Gate counts ``(s1, s2)`` per chunk, in chunk order.
@@ -142,14 +143,17 @@ def expected_overhead(
         acceptance: Each chunk's acceptance probability ``q_k``, in chunk
             order.
         noisy_q: If True, add the one-time frame resolution.
-        size: Gate count of the whole circuit.
 
     Returns:
         The expected overhead, or ``math.inf`` if any ``q_k`` is zero.
 
     Raises:
-        ValueError: if the three per-chunk sequences differ in length.
+        ValueError: if the three per-chunk sequences differ in length, or if
+            the chunks contain no gates.
     """
+    size = sum(s1 + s2 for s1, s2 in counts)
+    if size == 0:
+        raise ValueError("circuit must contain at least one gate")
     tail = sum(teleport_region(n))
     expected = 0.0
     for (s1, s2), checks, q in zip(

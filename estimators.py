@@ -507,8 +507,6 @@ def gate_overhead(
             "estimate carries no check counts; pooled estimates are averaged "
             "over their individual overheads instead"
         )
-    if estimate.size == 0:
-        raise ValueError("circuit must contain at least one gate")
     if any(a == 0 for a in estimate.chunk_accepted):
         raise ValueError(
             "a chunk accepted no shots, so its restart probability is "
@@ -528,5 +526,4 @@ def gate_overhead(
         regions,
         [a / estimate.shots for a in estimate.chunk_accepted],
         noisy_q,
-        estimate.size,
     )
