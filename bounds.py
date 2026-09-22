@@ -306,9 +306,9 @@ def choose_tr(
     n: int,
     noise: NoiseModel,
     *,
-    max_overhead: float = 2.0,
+    max_overhead: float,
+    r_max: int,
     t_max: int | None = None,
-    r_max: int = 20,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     noisy_q: bool = False,
@@ -324,17 +324,11 @@ def choose_tr(
         n: Number of data qubits.
         noise: The four rates.
         max_overhead: Largest acceptable gate-overhead bound.
+        r_max: Largest number of checks per chunk to consider, a search cap
+            rather than a physical limit.
         t_max: Largest number of chunks to consider. Defaults to the gate
-            count of ``circuit``.
-        r_max: Largest number of checks per chunk to consider. A search cap,
-            not a physical limit. The optimum sits at roughly
-            ``log_miss(floor * c / prep)``, where ``c`` is the per-check
-            fault probability and ``floor`` the ``r``-independent part of the
-            numerator, so under uniform draws (``miss = 1/2``) it is a base-2
-            logarithm of small quantities and stays in single digits. Under
-            restricted draws ``miss = 1 - 2/(3n)``, which multiplies that
-            logarithm by about ``1.5n``; the default is already too small at
-            ``n = 3``.
+            count of ``circuit``; more chunks than gates are empty and only
+            add cost, so the default searches every useful ``t``.
         noisy_checks: If True, charge each check the ancilla gadget's cost in
             both bounds.
         restricted_checks: If True, price the restricted check family in both bounds.
@@ -345,7 +339,8 @@ def choose_tr(
 
     Returns:
         The pair ``(t, r)`` with the smallest logical error rate bound among
-        those meeting the overhead constraint.
+        those meeting the overhead constraint. A result with ``r == r_max``
+        may mean the cap is binding.
 
     Raises:
         ValueError: if ``r_max < 0``, if ``t_max < 1``, or if no pair meets
