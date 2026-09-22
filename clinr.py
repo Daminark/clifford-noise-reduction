@@ -550,9 +550,9 @@ def build_clinr_tr(
     Args:
         circuit: The Clifford circuit ``C`` over ``n`` qubits.
         n: Number of data qubits.
-        checks: One list of checks per chunk, in the format returned by
-            :func:`draw_checks`. The number of chunks ``t`` is
-            ``len(checks)``. Any stabilizers of the resource state give a
+        checks: One list of ``r`` checks per chunk, the same ``r`` for every
+            chunk, in the format returned by :func:`draw_checks`. The number
+            of chunks ``t`` is ``len(checks)``. Any stabilizers of the resource state give a
             valid circuit; the bounds in :mod:`bounds` cover only the two
             distributions :func:`draw_checks` implements.
         noise: The circuit-level error rates.
@@ -575,10 +575,16 @@ def build_clinr_tr(
         ``C``).
 
     Raises:
-        ValueError: if a check does not have length ``2n``, is the identity,
-            or does not stabilize its chunk's resource state; or from
+        ValueError: if the chunks have different numbers of checks; if a
+            check does not have length ``2n``, is the identity, or does not
+            stabilize its chunk's resource state; or from
             :func:`chunk_circuit`.
     """
+    if len({len(chunk_checks) for chunk_checks in checks}) > 1:
+        raise ValueError(
+            "every chunk needs the same number of checks, got "
+            f"{[len(chunk_checks) for chunk_checks in checks]}"
+        )
     full_tableau = _pad_to_width(circuit, n).to_tableau()
     chunks = chunk_circuit(circuit, n, len(checks))
     b1, b2, b3, ref, anc = blocks(n)
