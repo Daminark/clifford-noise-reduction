@@ -104,18 +104,15 @@ class Estimate:
         s1: Single-qubit gate count of the circuit.
         s2: Two-qubit gate count of the circuit.
         chunk_accepted: Shots accepted by each chunk's checks alone, in chunk
-            order. Empty only for the direct implementation, which has no
-            chunks; a chunk with no checks accepts every shot.
+            order. A chunk with no checks accepts every shot.
         chunk_checks: Number of checks measured in each chunk, in chunk order.
-            Empty when the checks are not those of a single run, as in a
-            pooled estimate.
-        chunk_weight: Total weight of those checks, in chunk order, empty on
-            the same condition.
+        chunk_weight: Total weight of those checks, in chunk order.
+
+    The three per-chunk tuples have one length: the number of chunks, or zero
+    for the direct implementation, which has none.
 
     Raises:
-        ValueError: if ``chunk_checks`` and ``chunk_weight`` have different
-            lengths, or if they are non-empty and disagree with
-            ``chunk_accepted``.
+        ValueError: if the per-chunk tuples have different lengths.
     """
 
     shots: int
@@ -128,17 +125,16 @@ class Estimate:
     chunk_weight: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
-        if len(self.chunk_checks) != len(self.chunk_weight):
+        lengths = {
+            len(self.chunk_accepted),
+            len(self.chunk_checks),
+            len(self.chunk_weight),
+        }
+        if len(lengths) > 1:
             raise ValueError(
-                f"chunk_checks has {len(self.chunk_checks)} entries and "
-                f"chunk_weight has {len(self.chunk_weight)}"
-            )
-        if self.chunk_checks and len(self.chunk_checks) != len(
-            self.chunk_accepted
-        ):
-            raise ValueError(
-                f"chunk_checks has {len(self.chunk_checks)} entries and "
-                f"chunk_accepted has {len(self.chunk_accepted)}"
+                "per-chunk tuples disagree in length: "
+                f"{len(self.chunk_accepted)}, {len(self.chunk_checks)}, "
+                f"{len(self.chunk_weight)}"
             )
 
     @property
@@ -496,17 +492,11 @@ def gate_overhead(
         The estimated expected gate overhead.
 
     Raises:
-        ValueError: if ``estimate`` has no chunks, if it carries no check
-            counts, if any chunk accepted no shots, or if ``circuit`` has no
-            gates.
+        ValueError: if ``estimate`` has no chunks, if any chunk accepted no
+            shots, or if ``circuit`` has no gates.
     """
     if not estimate.chunk_accepted:
         raise ValueError("estimate has no chunks")
-    if not estimate.chunk_checks:
-        raise ValueError(
-            "estimate carries no check counts; pooled estimates are averaged "
-            "over their individual overheads instead"
-        )
     if any(a == 0 for a in estimate.chunk_accepted):
         raise ValueError(
             "a chunk accepted no shots, so its restart probability is "

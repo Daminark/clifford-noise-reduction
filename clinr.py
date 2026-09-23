@@ -464,9 +464,9 @@ def draw_checks(
     for chunk in chunk_circuit(circuit, n, t):
         tableau = chunk.to_tableau()
         if restricted_checks:
-            family = restricted_family(tableau, n, bare, image, 2 * n)
+            pool = restricted_family(tableau, n, bare, image, 2 * n)
             checks.append(
-                [family[int(rng.integers(len(family)))] for _ in range(r)]
+                [pool[int(rng.integers(len(pool)))] for _ in range(r)]
             )
         else:
             gens = stabilizer_gens(tableau, n, bare, image, 2 * n)
