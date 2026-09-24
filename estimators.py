@@ -107,12 +107,16 @@ class Estimate:
             order. A chunk with no checks accepts every shot.
         chunk_checks: Number of checks measured in each chunk, in chunk order.
         chunk_weight: Total weight of those checks, in chunk order.
+        chunk_counts: Gate counts ``(s1, s2)`` of each chunk, in chunk order.
 
-    The three per-chunk tuples have one length: the number of chunks, or zero
-    for the direct implementation, which has none.
+    The four per-chunk tuples have one length: the number of chunks, or zero
+    for the direct implementation, which has none. Carrying the chunk gate
+    counts is what lets :func:`gate_overhead` work from the estimate alone,
+    rather than being handed a circuit it has to trust.
 
     Raises:
-        ValueError: if the per-chunk tuples have different lengths.
+        ValueError: if the per-chunk tuples have different lengths, or if the
+            chunk gate counts do not sum to ``(s1, s2)``.
     """
 
     shots: int
@@ -123,19 +127,31 @@ class Estimate:
     chunk_accepted: tuple[int, ...] = ()
     chunk_checks: tuple[int, ...] = ()
     chunk_weight: tuple[int, ...] = ()
+    chunk_counts: tuple[tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
         lengths = {
             len(self.chunk_accepted),
             len(self.chunk_checks),
             len(self.chunk_weight),
+            len(self.chunk_counts),
         }
         if len(lengths) > 1:
             raise ValueError(
                 "per-chunk tuples disagree in length: "
                 f"{len(self.chunk_accepted)}, {len(self.chunk_checks)}, "
-                f"{len(self.chunk_weight)}"
+                f"{len(self.chunk_weight)}, {len(self.chunk_counts)}"
             )
+        if self.chunk_counts:
+            totals = (
+                sum(s1 for s1, _ in self.chunk_counts),
+                sum(s2 for _, s2 in self.chunk_counts),
+            )
+            if totals != (self.s1, self.s2):
+                raise ValueError(
+                    f"chunk gate counts sum to {totals}, not "
+                    f"{(self.s1, self.s2)}"
+                )
 
     @property
     def size(self) -> int:
@@ -245,6 +261,10 @@ def estimate_clinr(
     per_chunk_checks = [len(c) for c in checks]
     accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
     s1, s2 = accounting.gate_counts(circuit)
+    chunk_counts = tuple(
+        accounting.gate_counts(c)
+        for c in clinr.chunk_circuit(circuit, n, len(checks))
+    )
     return Estimate(
         shots,
         accepted,
@@ -254,6 +274,7 @@ def estimate_clinr(
         per_chunk,
         tuple(per_chunk_checks),
         tuple(sum(p.weight for p in c) for c in checks),
+        chunk_counts,
     )
 
 
@@ -351,9 +372,14 @@ def sweep_direct(
 def _comparable(estimates: list[Estimate]) -> None:
     """Check that estimates describe one circuit under one set of parameters.
 
+    Shot counts may differ: the draw, not the shot, is the unit of
+    observation. Check weights may differ too, since that variation is what
+    repeated draws are for.
+
     Raises:
-        ValueError: if ``estimates`` is empty, if the gate counts or chunk
-            counts disagree, or if any estimate accepted no shots.
+        ValueError: if ``estimates`` is empty, if the gate counts or the
+            per-chunk check counts disagree, or if any estimate accepted no
+            shots.
     """
     if not estimates:
         raise ValueError("estimates must not be empty")
@@ -364,10 +390,10 @@ def _comparable(estimates: list[Estimate]) -> None:
                 f"gate counts disagree: {(first.s1, first.s2)} "
                 f"and {(other.s1, other.s2)}"
             )
-        if len(other.chunk_accepted) != len(first.chunk_accepted):
+        if other.chunk_checks != first.chunk_checks:
             raise ValueError(
-                f"chunk counts disagree: {len(first.chunk_accepted)} "
-                f"and {len(other.chunk_accepted)}"
+                f"checks per chunk disagree: {first.chunk_checks} "
+                f"and {other.chunk_checks}"
             )
         if other.accepted == 0:
             raise ValueError("an estimate accepted no shots")
@@ -426,8 +452,66 @@ def design_effect(estimates: list[Estimate]) -> float:
     return between / within
 
 
+def gate_overhead(
+    n: int,
+    estimate: Estimate,
+    *,
+    noisy_checks: bool = True,
+    noisy_q: bool = False,
+    native_plus: bool = False,
+) -> float:
+    """Estimate the gate overhead from an estimate's measured acceptance.
+
+    Identical to :func:`bounds.overhead_bound` except that each chunk is
+    charged the weight of the checks actually drawn, and its restart
+    probability is taken from its measured acceptance rather than bounded
+    analytically; both call the same operation-count helper. Since every
+    attempt runs all of a chunk's checks, that restart probability is the only
+    estimated quantity. Everything but ``n`` is read from ``estimate``: the
+    chunks' gate counts, their checks and their measured acceptance, so no
+    circuit has to be supplied and trusted to be the one that was sampled.
+
+    Args:
+        n: Number of data qubits.
+        estimate: Counts from :func:`estimate_clinr`.
+        noisy_checks: If True, charge each check the ancilla gadget's
+            operations; if False, an idealized check costs nothing. Must match
+            the value passed to :func:`estimate_clinr`.
+        noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
+            frame into a live corrected state once at the end of the chain.
+        native_plus: If True, charge ``|+>`` as a single native preparation.
+            Must match the value passed to :func:`estimate_clinr`.
+
+    Returns:
+        The estimated expected gate overhead.
+
+    Raises:
+        ValueError: if ``estimate`` has no chunks, if any chunk accepted no
+            shots, or if the chunks contain no gates.
+    """
+    if not estimate.chunk_accepted:
+        raise ValueError("estimate has no chunks")
+    if any(a == 0 for a in estimate.chunk_accepted):
+        raise ValueError(
+            "a chunk accepted no shots, so its restart probability is "
+            "unmeasurable"
+        )
+
+    regions = [
+        accounting.check_region(count, weight, noisy_checks, native_plus)
+        for count, weight in zip(estimate.chunk_checks, estimate.chunk_weight)
+    ]
+    return accounting.expected_overhead(
+        list(estimate.chunk_counts),
+        n,
+        accounting.prep_region(n, native_plus),
+        regions,
+        [a / estimate.shots for a in estimate.chunk_accepted],
+        noisy_q,
+    )
+
+
 def mean_gate_overhead(
-    circuit: stim.Circuit,
     n: int,
     estimates: list[Estimate],
     *,
@@ -449,71 +533,9 @@ def mean_gate_overhead(
     _comparable(estimates)
     overheads = [
         gate_overhead(
-            circuit, n, e, noisy_checks=noisy_checks, noisy_q=noisy_q,
+            n, e, noisy_checks=noisy_checks, noisy_q=noisy_q,
             native_plus=native_plus,
         )
         for e in estimates
     ]
     return sum(overheads) / len(overheads)
-
-
-def gate_overhead(
-    circuit: stim.Circuit,
-    n: int,
-    estimate: Estimate,
-    *,
-    noisy_checks: bool = True,
-    noisy_q: bool = False,
-    native_plus: bool = False,
-) -> float:
-    """Estimate the gate overhead from an estimate's measured acceptance.
-
-    Identical to :func:`bounds.overhead_bound` except that each chunk is
-    charged the weight of the checks actually drawn, and its restart
-    probability is taken from its measured acceptance rather than bounded
-    analytically; both call the same operation-count helper. Since every
-    attempt runs all of a chunk's checks, that restart probability is the only
-    estimated quantity. The number of chunks and of checks per chunk are read
-    from ``estimate``.
-
-    Args:
-        circuit: The Clifford circuit implemented.
-        n: Number of data qubits.
-        estimate: Counts from :func:`estimate_clinr` for the same circuit.
-        noisy_checks: If True, charge each check the ancilla gadget's
-            operations; if False, an idealized check costs nothing. Must match
-            the value passed to :func:`estimate_clinr`.
-        noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
-            frame into a live corrected state once at the end of the chain.
-        native_plus: If True, charge ``|+>`` as a single native preparation.
-            Must match the value passed to :func:`estimate_clinr`.
-
-    Returns:
-        The estimated expected gate overhead.
-
-    Raises:
-        ValueError: if ``estimate`` has no chunks, if any chunk accepted no
-            shots, or if ``circuit`` has no gates.
-    """
-    if not estimate.chunk_accepted:
-        raise ValueError("estimate has no chunks")
-    if any(a == 0 for a in estimate.chunk_accepted):
-        raise ValueError(
-            "a chunk accepted no shots, so its restart probability is "
-            "unmeasurable"
-        )
-
-    chunks = clinr.chunk_circuit(circuit, n, len(estimate.chunk_accepted))
-    counts = [accounting.gate_counts(c) for c in chunks]
-    regions = [
-        accounting.check_region(count, weight, noisy_checks, native_plus)
-        for count, weight in zip(estimate.chunk_checks, estimate.chunk_weight)
-    ]
-    return accounting.expected_overhead(
-        counts,
-        n,
-        accounting.prep_region(n, native_plus),
-        regions,
-        [a / estimate.shots for a in estimate.chunk_accepted],
-        noisy_q,
-    )
