@@ -47,7 +47,7 @@ from __future__ import annotations
 import numpy as np
 import stim
 
-from noise_models import NoiseModel
+from .noise_models import NoiseModel
 
 __all__ = [
     "blocks",

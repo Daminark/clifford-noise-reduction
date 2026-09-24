@@ -24,9 +24,8 @@ from dataclasses import dataclass
 import numpy as np
 import stim
 
-import accounting
-import clinr
-from noise_models import NoiseModel
+from . import accounting, protocol
+from .noise_models import NoiseModel
 
 __all__ = [
     "Z_95",
@@ -251,10 +250,10 @@ def estimate_clinr(
     """
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
-    checks = clinr.draw_checks(
+    checks = protocol.draw_checks(
         circuit, n, t, r, rng, restricted_checks=restricted_checks
     )
-    built = clinr.build_clinr_tr(
+    built = protocol.build_clinr_tr(
         circuit, n, checks, noise, noisy_checks=noisy_checks,
         noisy_q=noisy_q, native_plus=native_plus,
     )
@@ -263,7 +262,7 @@ def estimate_clinr(
     s1, s2 = accounting.gate_counts(circuit)
     chunk_counts = tuple(
         accounting.gate_counts(c)
-        for c in clinr.chunk_circuit(circuit, n, len(checks))
+        for c in protocol.chunk_circuit(circuit, n, len(checks))
     )
     return Estimate(
         shots,
@@ -305,7 +304,7 @@ def estimate_direct(
     """
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
-    built = clinr.build_direct(circuit, n, noise)
+    built = protocol.build_direct(circuit, n, noise)
     accepted, errors, _ = _tally(built, shots, rng, [])
     s1, s2 = accounting.gate_counts(circuit)
     return Estimate(shots, accepted, errors, s1, s2)

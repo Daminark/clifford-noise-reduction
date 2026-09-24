@@ -17,7 +17,7 @@ import math
 
 import stim
 
-import clinr
+from . import protocol
 
 Region = tuple[int, int, int, int]
 
@@ -40,15 +40,15 @@ __all__ = [
 def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
     """Return ``(s1, s2)``, the single- and two-qubit gate counts.
 
-    Counted over :func:`clinr.gate_list`, so identities are ignored and fused
-    instructions are split.
+    Counted over :func:`protocol.gate_list`, so identities are ignored
+    and fused instructions are split.
 
     Raises:
-        ValueError: propagated from :func:`clinr.gate_list` if an instruction
-            is malformed.
+        ValueError: propagated from :func:`protocol.gate_list` if an
+            instruction is malformed.
     """
     s1 = s2 = 0
-    for _, targets in clinr.gate_list(circuit):
+    for _, targets in protocol.gate_list(circuit):
         if len(targets) == 2:
             s2 += 1
         else:

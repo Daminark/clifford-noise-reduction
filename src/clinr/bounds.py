@@ -20,9 +20,8 @@ import math
 
 import stim
 
-import accounting
-import clinr
-from noise_models import NoiseModel
+from . import accounting, protocol
+from .noise_models import NoiseModel
 
 __all__ = [
     "fault_prob",
@@ -165,8 +164,9 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
     ``miss`` is the worst-case probability that a damaging resource fault
     commutes with all ``r`` checks. ``escapes`` sums, over the check gadgets,
     the probability that a fault arising in that gadget commutes with every
-    later check. Both are exact for the draws :func:`clinr.draw_checks` makes,
-    and ``miss`` is zero at ``r = 2n``, where the checks span the group.
+    later check. Both are exact for the draws :func:`protocol.draw_checks`
+    makes, and ``miss`` is zero at ``r = 2n``, where the checks span the
+    group.
 
     ``r`` travels in the tuple because the other three are only valid for the
     ``r`` they were computed at.
@@ -301,28 +301,28 @@ def plog_bound(
         noisy_checks: If True, charge each check the fault locations of the
             ancilla gadget; if False, treat it as an idealized projective
             measurement with no fault locations, matching ``noisy_checks`` in
-            :func:`clinr.build_clinr_tr`.
+            :func:`protocol.build_clinr_tr`.
         restricted_checks: If True, price the weight-``(n+1)`` family of
-            :func:`clinr.restricted_family`, whose ``3n`` elements detect a
+            :func:`protocol.restricted_family`, whose ``3n`` elements detect a
             damaging fault less often at a given ``r`` than draws from the
             whole group.
         noisy_q: If True, add the one-time frame-resolution cost.
         native_plus: If True, price ``|+>`` as a single native preparation,
             the paper's Sec. II convention, dropping ``n`` single-qubit fault
             locations per chunk; matching ``native_plus`` in
-            :func:`clinr.build_clinr_tr`.
+            :func:`protocol.build_clinr_tr`.
 
     Returns:
         An upper bound on the logical error rate, not clipped to ``[0, 1]``.
 
     Raises:
         ValueError: if ``n < 1``, if ``r`` is negative or exceeds ``2n``, or
-            from :func:`clinr.chunk_circuit` if ``t < 1`` or ``circuit`` is
+            from :func:`protocol.chunk_circuit` if ``t < 1`` or ``circuit`` is
             wider than ``n``.
     """
     _check_r(n, r)
     family = _check_family(n, r, restricted_checks)
-    chunks = clinr.chunk_circuit(circuit, n, t)
+    chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(c) for c in chunks]
     return _plog_from_counts(
         counts, noise, n, family, noisy_checks, noisy_q, native_plus
@@ -376,7 +376,7 @@ def overhead_bound(
     """
     _check_r(n, r)
     family = _check_family(n, r, restricted_checks)
-    chunks = clinr.chunk_circuit(circuit, n, t)
+    chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(c) for c in chunks]
     return _overhead_from_counts(
         counts, noise, n, family, noisy_checks, noisy_q, native_plus
@@ -441,7 +441,7 @@ def choose_tr(
     best: tuple[int, int] | None = None
     best_plog = float("inf")
     for t in range(1, upper_t + 1):
-        chunks = clinr.chunk_circuit(circuit, n, t)
+        chunks = protocol.chunk_circuit(circuit, n, t)
         counts = [accounting.gate_counts(c) for c in chunks]
         for r, family in enumerate(families):
             if _overhead_from_counts(
