@@ -447,7 +447,8 @@ def design_effect(estimates: list[Estimate]) -> float:
     mean = sum(rates) / len(rates)
     between = sum((r - mean) ** 2 for r in rates) / (len(rates) - 1)
     within = sum(
-        r * (1.0 - r) / e.accepted for r, e in zip(rates, estimates)
+        r * (1.0 - r) / e.accepted
+        for r, e in zip(rates, estimates, strict=True)
     ) / len(estimates)
     return between / within
 
@@ -499,7 +500,9 @@ def gate_overhead(
 
     regions = [
         accounting.check_region(count, weight, noisy_checks, native_plus)
-        for count, weight in zip(estimate.chunk_checks, estimate.chunk_weight)
+        for count, weight in zip(
+            estimate.chunk_checks, estimate.chunk_weight, strict=True
+        )
     ]
     return accounting.expected_overhead(
         list(estimate.chunk_counts),

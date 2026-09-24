@@ -58,7 +58,7 @@ def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
 
 def add(*regions: Region) -> Region:
     """Elementwise sum of regions."""
-    n1, n2, nm, n_prep = (sum(counts) for counts in zip(*regions))
+    n1, n2, nm, n_prep = (sum(counts) for counts in zip(*regions, strict=True))
     return (n1, n2, nm, n_prep)
 
 

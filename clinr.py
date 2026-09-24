@@ -303,7 +303,7 @@ def random_stabilizer(
     while True:
         take = rng.random(len(gens)) < 0.5
         product = stim.PauliString(total)
-        for keep, gen in zip(take, gens):
+        for keep, gen in zip(take, gens, strict=True):
             if keep:
                 product *= gen
         if product.weight > 0:
@@ -683,7 +683,9 @@ def build_clinr_tr(
         out.append("CX", [ref[i], b1[i]])
 
     data_in = b1  # block the current chunk reads its input from
-    for k, (chunk, chunk_checks) in enumerate(zip(chunks, checks)):
+    for k, (chunk, chunk_checks) in enumerate(
+        zip(chunks, checks, strict=True)
+    ):
         tableau = chunk.to_tableau()
         gens = stabilizer_gens(
             tableau, n, list(range(n)), list(range(n, 2 * n)), 2 * n
