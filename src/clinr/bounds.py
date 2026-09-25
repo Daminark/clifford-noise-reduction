@@ -99,19 +99,22 @@ def _poly_pow(a: _Poly, k: int) -> _Poly:
     return out
 
 
-def _check_r(n: int, r: int, name: str = "r") -> None:
-    """Reject a check count the protocol cannot draw independently.
+def _check_r(
+    n: int, r: int, name: str = "r", *, iid_checks: bool = False
+) -> None:
+    """Reject a check count the protocol cannot draw.
 
     ``2n`` is the rank of the resource stabilizer group, so it is the largest
     number of independent checks that exists, and it is where ``miss`` reaches
-    zero. ``name`` appears in the message, for callers whose parameter is not
-    literally ``r``.
+    zero. The cap does not apply to ``iid_checks``, which draws with
+    replacement. ``name`` appears in the message, for callers whose parameter
+    is not literally ``r``.
     """
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if r < 0:
         raise ValueError(f"{name} must be non-negative, got {r}")
-    if r > 2 * n:
+    if r > 2 * n and not iid_checks:
         raise ValueError(
             f"{name} must be at most 2n = {2 * n} for independent checks, "
             f"got {r}"
@@ -158,20 +161,46 @@ def _restricted_detection(n: int, r: int) -> tuple[float, float]:
     return worst[0], sum(worst[1:], 0.0)
 
 
-def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
-    """``(r, miss, escapes, check_weight)`` for ``r`` independent checks.
+def _iid_detection(
+    n: int, r: int, restricted_checks: bool
+) -> tuple[float, float]:
+    """``(miss, escapes)`` for ``r`` draws with replacement.
+
+    The draws are independent random variables, so the misses multiply and a
+    fault arising in gadget ``j`` faces ``r - j`` genuinely fresh draws. The
+    per-draw miss is exact for what :func:`checks.draw_checks` samples: the
+    full group rejects the identity, and the restricted family's worst case
+    is a fault visible to a single Bell triple.
+    """
+    if restricted_checks:
+        q = (3 * n - 2) / (3 * n)
+    else:
+        q = (2 ** (2 * n - 1) - 1) / (2 ** (2 * n) - 1)
+    miss, escapes = 1.0, 0.0
+    for _ in range(r):
+        escapes += miss
+        miss *= q
+    return miss, escapes
+
+
+def _check_family(
+    n: int, r: int, restricted_checks: bool, iid_checks: bool = False
+) -> _Family:
+    """``(r, miss, escapes, check_weight)`` for a chunk's ``r`` checks.
 
     ``miss`` is the worst-case probability that a damaging resource fault
     commutes with all ``r`` checks. ``escapes`` sums, over the check gadgets,
     the probability that a fault arising in that gadget commutes with every
     later check. Both are exact for the draws :func:`checks.draw_checks`
-    makes, and ``miss`` is zero at ``r = 2n``, where the checks span the
-    group.
+    makes under the same flags, and without ``iid_checks`` the miss is zero
+    at ``r = 2n``, where the checks span the group.
 
     ``r`` travels in the tuple because the other three are only valid for the
     ``r`` they were computed at.
     """
-    if restricted_checks:
+    if iid_checks:
+        miss, escapes = _iid_detection(n, r, restricted_checks)
+    elif restricted_checks:
         miss, escapes = _restricted_detection(n, r)
     else:
         miss, escapes = _uniform_detection(n, r)
@@ -277,6 +306,7 @@ def plog_bound(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
@@ -306,6 +336,9 @@ def plog_bound(
             :func:`checks.restricted_family`, whose ``3n`` elements detect a
             damaging fault less often at a given ``r`` than draws from the
             whole group.
+        iid_checks: If True, price draws made with replacement rather than
+            linearly independently, matching ``iid_checks`` in
+            :func:`checks.draw_checks`.
         noisy_q: If True, add the one-time frame-resolution cost.
         native_plus: If True, price ``|+>`` as a single native preparation,
             the paper's Sec. II convention, dropping ``n`` single-qubit fault
@@ -320,8 +353,8 @@ def plog_bound(
             from :func:`protocol.chunk_circuit` if ``t < 1`` or ``circuit`` is
             wider than ``n``.
     """
-    _check_r(n, r)
-    family = _check_family(n, r, restricted_checks)
+    _check_r(n, r, iid_checks=iid_checks)
+    family = _check_family(n, r, restricted_checks, iid_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(c) for c in chunks]
     return _plog_from_counts(
@@ -338,6 +371,7 @@ def overhead_bound(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
@@ -360,8 +394,11 @@ def overhead_bound(
         noise: The four rates.
         noisy_checks: If True, charge each check the operations of the ancilla
             gadget; if False, an idealized check costs nothing.
-        restricted_checks: If True, price the weight-``(n+1)`` restricted family;
-            the worst-case check weight drops from ``2n`` to ``n + 1``.
+        restricted_checks: If True, price the weight-``(n+1)`` restricted
+            family; the worst-case check weight drops from ``2n`` to
+            ``n + 1``.
+        iid_checks: If True, lift the cap on ``r``; the overhead does not
+            otherwise depend on how the checks were drawn.
         noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
             frame into a live corrected state once at the end of the chain.
         native_plus: If True, price ``|+>`` as a single native preparation,
@@ -374,8 +411,8 @@ def overhead_bound(
         ValueError: if ``circuit`` has no gates, or on the same conditions as
             :func:`plog_bound`.
     """
-    _check_r(n, r)
-    family = _check_family(n, r, restricted_checks)
+    _check_r(n, r, iid_checks=iid_checks)
+    family = _check_family(n, r, restricted_checks, iid_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(c) for c in chunks]
     return _overhead_from_counts(
@@ -393,6 +430,7 @@ def choose_tr(
     t_max: int | None = None,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> tuple[int, int]:
@@ -407,13 +445,17 @@ def choose_tr(
         noise: The four rates.
         max_overhead: Largest acceptable gate-overhead bound.
         r_max: Largest number of checks per chunk to consider, at most
-            ``2n``. A search cap below that limit, not a physical one.
+            ``2n`` unless ``iid_checks``. A search cap below that limit, not
+            a physical one.
         t_max: Largest number of chunks to consider. Defaults to the gate
             count of ``circuit``; more chunks than gates are empty and only
             add cost, so the default searches every useful ``t``.
         noisy_checks: If True, charge each check the ancilla gadget's cost in
             both bounds.
-        restricted_checks: If True, price the restricted check family in both bounds.
+        restricted_checks: If True, price the restricted check family in
+            both bounds.
+        iid_checks: If True, search and price draws made with replacement,
+            which also lifts the cap on ``r_max``.
         noisy_q: If True, evaluate both bounds under one-time frame resolution,
             so the objective and the overhead constraint share the assumption.
         native_plus: If True, price ``|+>`` as a single native preparation in
@@ -428,7 +470,7 @@ def choose_tr(
         ValueError: if ``n < 1``, if ``r_max`` is negative or exceeds ``2n``,
             if ``t_max < 1``, or if no pair meets the overhead constraint.
     """
-    _check_r(n, r_max, "r_max")
+    _check_r(n, r_max, "r_max", iid_checks=iid_checks)
     s1_all, s2_all = accounting.gate_counts(circuit)
     size = s1_all + s2_all
     upper_t = size if t_max is None else t_max
@@ -436,7 +478,8 @@ def choose_tr(
         raise ValueError(f"t_max must be at least 1, got {upper_t}")
 
     families = [
-        _check_family(n, r, restricted_checks) for r in range(r_max + 1)
+        _check_family(n, r, restricted_checks, iid_checks)
+        for r in range(r_max + 1)
     ]
     best: tuple[int, int] | None = None
     best_plog = float("inf")

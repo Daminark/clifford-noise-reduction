@@ -217,6 +217,7 @@ def estimate_clinr(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> Estimate:
@@ -235,6 +236,9 @@ def estimate_clinr(
         shots: Number of shots to sample.
         rng: NumPy generator.
         noisy_checks: If True, measure checks with the noisy gadget.
+        iid_checks: If True, draw the checks with replacement rather than
+            linearly independently, matching ``iid_checks`` in
+            :func:`checks.draw_checks`.
         restricted_checks: If True, draw checks from the weight-``(n+1)``
             family instead of uniformly from the full stabilizer group.
         noisy_q: If True, resolve the tracked Pauli frame into a live corrected
@@ -251,7 +255,8 @@ def estimate_clinr(
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
     drawn = checks.draw_checks(
-        circuit, n, t, r, rng, restricted_checks=restricted_checks
+        circuit, n, t, r, rng,
+        restricted_checks=restricted_checks, iid_checks=iid_checks,
     )
     built = protocol.build_clinr_tr(
         circuit, n, drawn, noise, noisy_checks=noisy_checks,
@@ -321,6 +326,7 @@ def sweep_clinr(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> list[Estimate]:
@@ -340,6 +346,7 @@ def sweep_clinr(
         estimate_clinr(
             c, n, t, r, noise, shots, rng,
             noisy_checks=noisy_checks, restricted_checks=restricted_checks,
+            iid_checks=iid_checks,
             noisy_q=noisy_q, native_plus=native_plus,
         )
         for c in circuits

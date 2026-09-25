@@ -115,15 +115,21 @@ def _reduce(
 
 
 def _draw_uniform(
-    gens: list[stim.PauliString], r: int, rng: np.random.Generator
+    gens: list[stim.PauliString],
+    r: int,
+    rng: np.random.Generator,
+    *,
+    iid: bool,
 ) -> list[stim.PauliString]:
-    """``r`` independent stabilizers, uniform over ordered independent tuples.
+    """``r`` stabilizers from the group, independent unless ``iid``.
 
-    Rejecting dependent candidates one at a time is exactly uniform here: for
-    a prefix of rank ``j`` the acceptable set has ``2^{2n} - 2^j`` elements
-    whatever the prefix is, so every ordered independent tuple is reached with
-    the same probability.
+    Rejecting dependent candidates one at a time is exactly uniform over the
+    ordered independent tuples here: for a prefix of rank ``j`` the acceptable
+    set has ``2^{2n} - 2^j`` elements whatever the prefix is, so every such
+    tuple is reached with the same probability.
     """
+    if iid:
+        return [random_stabilizer(gens, rng) for _ in range(r)]
     basis: dict[int, np.ndarray] = {}
     drawn: list[stim.PauliString] = []
     while len(drawn) < r:
@@ -137,9 +143,13 @@ def _draw_uniform(
 
 
 def _draw_restricted(
-    pool: list[stim.PauliString], r: int, rng: np.random.Generator
+    pool: list[stim.PauliString],
+    r: int,
+    rng: np.random.Generator,
+    *,
+    iid: bool,
 ) -> list[stim.PauliString]:
-    """``r`` independent members of ``pool``, uniform over ordered tuples.
+    """``r`` members of ``pool``, independent unless ``iid``.
 
     Rejection one at a time would *not* be uniform over the restricted family:
     a prefix holding both members of one Bell triple leaves fewer acceptable
@@ -147,6 +157,8 @@ def _draw_restricted(
     ``r``-subset and rejecting it entire conditions the uniform distribution
     on independence, which is uniform over what remains.
     """
+    if iid:
+        return [pool[int(rng.integers(len(pool)))] for _ in range(r)]
     while True:
         drawn = [pool[int(i)] for i in rng.permutation(len(pool))[:r]]
         basis: dict[int, np.ndarray] = {}
@@ -167,8 +179,9 @@ def draw_checks(
     rng: np.random.Generator,
     *,
     restricted_checks: bool = False,
+    iid_checks: bool = False,
 ) -> list[list[stim.PauliString]]:
-    """Draw ``r`` independent checks for each of the ``t`` chunks of ``circuit``.
+    """Draw ``r`` checks for each of the ``t`` chunks of ``circuit``.
 
     Each check is a length-``2n`` Pauli on the resource state of its chunk,
     with positions ``[0, n)`` on the bare half and ``[n, 2n)`` on the half
@@ -180,6 +193,12 @@ def draw_checks(
     group, and at ``r = 2n`` the checks span the group, so no damaging fault
     can commute with all of them.
 
+    ``iid_checks`` draws them independently and identically instead, with
+    replacement, which is the convention the recursion paper's Lemma 1
+    analyses rather than one either paper's protocol runs. It is an
+    instrument for attributing the effect of the sampling convention, and it
+    lifts the cap on ``r``.
+
     Args:
         circuit: The Clifford circuit ``C`` over ``n`` qubits.
         n: Number of data qubits.
@@ -189,17 +208,19 @@ def draw_checks(
         restricted_checks: If True, draw from :func:`restricted_family`;
             otherwise draw from the non-identity elements of the full
             stabilizer group.
+        iid_checks: If True, draw with replacement rather than linearly
+            independently, and do not cap ``r``.
 
     Returns:
         ``t`` lists of ``r`` checks, in chunk order.
 
     Raises:
-        ValueError: if ``r`` is negative or exceeds ``2n``, or from
-            :func:`protocol.chunk_circuit`.
+        ValueError: if ``r`` is negative, or exceeds ``2n`` without
+            ``iid_checks``, or from :func:`protocol.chunk_circuit`.
     """
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
-    if r > 2 * n:
+    if r > 2 * n and not iid_checks:
         raise ValueError(
             f"r must be at most 2n = {2 * n} for independent checks, got {r}"
         )
@@ -209,8 +230,8 @@ def draw_checks(
         tableau = chunk.to_tableau()
         if restricted_checks:
             pool = restricted_family(tableau, n, bare, image, 2 * n)
-            checks.append(_draw_restricted(pool, r, rng))
+            checks.append(_draw_restricted(pool, r, rng, iid=iid_checks))
         else:
             gens = protocol.stabilizer_gens(tableau, n, bare, image, 2 * n)
-            checks.append(_draw_uniform(gens, r, rng))
+            checks.append(_draw_uniform(gens, r, rng, iid=iid_checks))
     return checks
