@@ -164,7 +164,7 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
     ``miss`` is the worst-case probability that a damaging resource fault
     commutes with all ``r`` checks. ``escapes`` sums, over the check gadgets,
     the probability that a fault arising in that gadget commutes with every
-    later check. Both are exact for the draws :func:`protocol.draw_checks`
+    later check. Both are exact for the draws :func:`checks.draw_checks`
     makes, and ``miss`` is zero at ``r = 2n``, where the checks span the
     group.
 
@@ -303,7 +303,7 @@ def plog_bound(
             measurement with no fault locations, matching ``noisy_checks`` in
             :func:`protocol.build_clinr_tr`.
         restricted_checks: If True, price the weight-``(n+1)`` family of
-            :func:`protocol.restricted_family`, whose ``3n`` elements detect a
+            :func:`checks.restricted_family`, whose ``3n`` elements detect a
             damaging fault less often at a given ``r`` than draws from the
             whole group.
         noisy_q: If True, add the one-time frame-resolution cost.

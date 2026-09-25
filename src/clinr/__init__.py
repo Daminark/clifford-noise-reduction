@@ -15,6 +15,7 @@ re-exported functions.
 from . import (
     accounting,
     bounds,
+    checks,
     circuits,
     estimators,
     noise_models,
@@ -23,6 +24,7 @@ from . import (
 
 __all__ = [
     "protocol",
+    "checks",
     "accounting",
     "bounds",
     "estimators",
