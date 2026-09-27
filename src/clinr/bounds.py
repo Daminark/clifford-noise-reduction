@@ -17,6 +17,7 @@ resource stabilizer group so a check has weight at most ``2n``.
 from __future__ import annotations
 
 import math
+from typing import NamedTuple
 
 import stim
 
@@ -68,7 +69,22 @@ def fault_prob(
     return 1.0 - _no_fault_prob(noise, n1, n2, nm, n_prep)
 
 
-_Family = tuple[int, float, float, int]
+class _Family(NamedTuple):
+    """A chunk's check family, valid only for the ``r`` it was computed at.
+
+    Attributes:
+        r: Number of checks per chunk.
+        miss: Worst-case probability that a damaging resource fault commutes
+            with all ``r`` checks.
+        escapes: Summed over the check gadgets, the probability that a fault
+            arising in that gadget commutes with every later check.
+        weight: Worst-case weight of one check.
+    """
+
+    r: int
+    miss: float
+    escapes: float
+    weight: int
 
 
 def _check_r(n: int, r: int, name: str = "r") -> None:
@@ -113,19 +129,13 @@ def _detection(
 
 
 def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
-    """``(r, miss, escapes, check_weight)`` for a chunk's ``r`` checks.
+    """Return the detection probabilities and weight of ``r`` checks.
 
-    ``miss`` is the worst-case probability that a damaging resource fault
-    commutes with all ``r`` checks. ``escapes`` sums, over the check gadgets,
-    the probability that a fault arising in that gadget commutes with every
-    later check. Both are exact for the draws :func:`checks.draw_checks`
-    makes.
-
-    ``r`` travels in the tuple because the other three are only valid for the
-    ``r`` they were computed at.
+    ``miss`` and ``escapes`` are exact for the draws
+    :func:`checks.draw_checks` makes.
     """
     miss, escapes = _detection(n, r, restricted_checks)
-    return r, miss, escapes, _check_weight(n, restricted_checks)
+    return _Family(r, miss, escapes, _check_weight(n, restricted_checks))
 
 
 def _chunk_plog_bound(
@@ -150,7 +160,9 @@ def _chunk_plog_bound(
     """
     r, miss, escapes, w = family
     prep = accounting.prep_region(n, native_plus)
-    resource = accounting.add(prep, (s1, s2, 0, 0))
+    resource = accounting.add(
+        prep, accounting.Region(n1=s1, n2=s2, nm=0, n_prep=0)
+    )
     resource_fault = fault_prob(noise, *resource)
     check_fault = fault_prob(
         noise, *accounting.check_region(1, w, noisy_checks, native_plus)

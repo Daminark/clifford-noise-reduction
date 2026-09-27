@@ -14,14 +14,30 @@ Frame resolution, when priced, is one further region for the whole chain.
 from __future__ import annotations
 
 import math
+from typing import NamedTuple
 
 import stim
 
 from . import protocol
 
-Region = tuple[int, int, int, int]
 
-ZERO: Region = (0, 0, 0, 0)
+class Region(NamedTuple):
+    """Operation counts for one region of the built circuit.
+
+    Attributes:
+        n1: Single-qubit gates.
+        n2: Two-qubit gates.
+        nm: Measurements.
+        n_prep: Preparations.
+    """
+
+    n1: int
+    n2: int
+    nm: int
+    n_prep: int
+
+
+ZERO = Region(0, 0, 0, 0)
 
 __all__ = [
     "Region",
@@ -58,8 +74,7 @@ def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
 
 def add(*regions: Region) -> Region:
     """Elementwise sum of regions."""
-    n1, n2, nm, n_prep = (sum(counts) for counts in zip(*regions, strict=True))
-    return (n1, n2, nm, n_prep)
+    return Region(*(sum(counts) for counts in zip(*regions, strict=True)))
 
 
 def prep_region(n: int, native_plus: bool) -> Region:
@@ -69,7 +84,7 @@ def prep_region(n: int, native_plus: bool) -> Region:
     further single-qubit gates as ``R`` then ``H``, and none as a native
     ``RX``.
     """
-    return (0 if native_plus else n, n, 0, 2 * n)
+    return Region(n1=0 if native_plus else n, n2=n, nm=0, n_prep=2 * n)
 
 
 def check_region(
@@ -85,7 +100,12 @@ def check_region(
     """
     if not noisy_checks:
         return ZERO
-    return ((1 if native_plus else 2) * count, weight, count, count)
+    return Region(
+        n1=(1 if native_plus else 2) * count,
+        n2=weight,
+        nm=count,
+        n_prep=count,
+    )
 
 
 def teleport_region(n: int) -> Region:
@@ -94,12 +114,12 @@ def teleport_region(n: int) -> Region:
     ``n`` controlled-Paulis, ``n`` Hadamards and ``2n`` measurements. The
     Pauli correction is tracked classically, so it is not part of this region.
     """
-    return (n, n, 2 * n, 0)
+    return Region(n1=n, n2=n, nm=2 * n, n_prep=0)
 
 
 def frame_region(n: int) -> Region:
     """Resolving the tracked Pauli frame once, at the end of the chain."""
-    return (n, 0, 0, 0)
+    return Region(n1=n, n2=0, nm=0, n_prep=0)
 
 
 def protected_region(
@@ -113,7 +133,7 @@ def protected_region(
         s2: Two-qubit gate count of the chunk.
         checks: All of the chunk's checks (:func:`check_region`).
     """
-    return add(prep, (s1, s2, 0, 0), checks)
+    return add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0), checks)
 
 
 def expected_overhead(
