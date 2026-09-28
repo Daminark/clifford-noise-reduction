@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 import stim
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from clinr import bounds, circuits, estimators, noise_models
@@ -40,15 +40,18 @@ def draw(errors: int, accepted: int, **fields) -> estimators.Estimate:
 # ---------------------------------------------------------------------------
 # wilson_interval
 # ---------------------------------------------------------------------------
-def test_wilson_interval_matches_the_tabulated_value_for_five_in_ten():
-    point, lo, hi = estimators.wilson_interval(5, 10)
+def test_wilson_interval_at_half_successes_has_the_closed_form_width():
+    """At k = n/2 the Wilson interval is 1/2 +- z / (2 sqrt(n + z^2))."""
+    z = 1.959963984540054
+    half = z / (2 * math.sqrt(10 + z**2))
 
-    assert point == 0.5
-    assert (lo, hi) == pytest.approx((0.2366, 0.7634), abs=1e-4)
+    assert estimators.wilson_interval(5, 10) == pytest.approx(
+        (0.5, 0.5 - half, 0.5 + half)
+    )
 
 
 def test_wilson_interval_with_no_successes_has_the_closed_form_upper_end():
-    # With k = 0 the Wilson upper bound is z^2 / (n + z^2).
+    """At k = 0 the Wilson interval is [0, z^2 / (n + z^2)]."""
     z2 = 1.959963984540054**2
 
     assert estimators.wilson_interval(0, 10) == pytest.approx(
@@ -138,7 +141,6 @@ def test_estimate_with_nothing_accepted_has_an_undefined_error_rate():
 # ---------------------------------------------------------------------------
 # estimate_clinr and estimate_direct
 # ---------------------------------------------------------------------------
-@settings(deadline=None, max_examples=30)
 @given(
     n=st.integers(1, 3),
     size=st.integers(1, 25),
@@ -165,7 +167,12 @@ def test_estimate_at_zero_noise_accepts_every_shot_without_error(
 
 
 def test_each_chunk_records_its_own_acceptance_not_the_joint_one():
-    # Every chunk's checks pass more often than all of them together.
+    """Each chunk's checks pass more often than all three chunks' together.
+
+    At 20000 shots each chunk accepts about 2000 more shots than the three
+    jointly, against a shot-noise spread of about 50, so the strict
+    inequality does not fail by chance.
+    """
     estimate = estimators.estimate_clinr(
         seeded_circuit(3, 20, seed=1), 3, 3, 3,
         noise_models.uniform_noise(2e-3), 20000, np.random.default_rng(2),
@@ -226,20 +233,25 @@ def test_sweeps_reject_an_empty_list_of_circuits(sweep):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(("accepted", "expected"), [(1000, 3.1), (500, 5.8)])
 def test_gate_overhead_on_a_hand_worked_estimate(accepted, expected):
-    # n = 1, one chunk of 10 gates with two checks of total weight 5.
-    # Protected region: preparation 4, gates 10, checks 2*2 + 5 + 2 + 2 = 13,
-    # so 27 per attempt; teleportation 4 once; over 10 gates.
+    """Worked by hand: (4 + 27 / acceptance) / 10.
+
+    One chunk at n = 1 of 10 gates, with two checks of total weight 5.
+    Protected region: preparation 4, gates 10, checks 2*2 + 5 + 2 + 2 = 13,
+    so 27 per attempt; teleportation 4 once.
+    """
     assert estimators.gate_overhead(1, draw(0, accepted)) == pytest.approx(
         expected
     )
 
 
 def test_gate_overhead_charges_each_chunk_its_own_acceptance():
-    # Two chunks: the first holds all 10 gates and always accepts (4 + 27 per
-    # pass); the second is empty and accepts half the time, so its 4 + 0 + 13
-    # protected operations are paid twice on average, plus its teleportation.
-    # (4 + 27 + 4 + 17 / 0.5) / 10 = 6.9. Charging both chunks the joint
-    # acceptance of 0.5 would give 9.6.
+    """Worked by hand: (4 + 27 + 4 + 17 / 0.5) / 10 = 6.9.
+
+    The first chunk holds all 10 gates and always accepts (4 + 27 per
+    pass); the second is empty and accepts half the time, so its 4 + 0 + 13
+    protected operations are paid twice on average, plus its teleportation.
+    Charging both chunks the joint acceptance of 0.5 would give 9.6.
+    """
     estimate = draw(
         0, 500, chunk_accepted=(1000, 500), chunk_checks=(2, 2),
         chunk_weight=(5, 5), chunk_counts=((6, 4), (0, 0)),
@@ -249,8 +261,11 @@ def test_gate_overhead_charges_each_chunk_its_own_acceptance():
 
 
 def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():
-    # The per-draw overheads are 3.1 and 5.8. Pooling the counts would give
-    # acceptance 0.75 and an overhead of (4 + 27 / 0.75) / 10 = 4.0 instead.
+    """Worked by hand: the per-draw overheads are 3.1 and 5.8.
+
+    Pooling the counts would give acceptance 0.75 and an overhead of
+    (4 + 27 / 0.75) / 10 = 4.0 instead.
+    """
     draws = [draw(0, 1000), draw(0, 500)]
 
     assert estimators.mean_gate_overhead(1, draws) == pytest.approx(4.45)
@@ -258,9 +273,12 @@ def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():
 
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_gate_overhead_at_zero_noise_is_at_most_the_bound(n):
-    # Acceptance is certain on both sides, so the two differ only in check
-    # weight: drawn against worst case. At n = 1 every non-identity stabilizer
-    # has weight 2 = 2n, so the two coincide.
+    """With certain acceptance only the check weights differ.
+
+    The estimate charges the drawn weight and the bound the worst case.
+    At n = 1 every non-identity stabilizer has weight 2 = 2n, so the two
+    coincide.
+    """
     circuit = seeded_circuit(n, 20, seed=n)
     estimate = estimators.estimate_clinr(
         circuit, n, 2, 3, NOISELESS, 100, np.random.default_rng(n)
@@ -296,8 +314,11 @@ SPREAD = [draw(80, 800), draw(96, 800), draw(112, 800)]
 
 
 def test_cluster_interval_is_a_student_t_interval_on_the_draw_means():
-    # Rates 0.10, 0.12, 0.14: mean 0.12, standard error 0.02 / sqrt(3), and
-    # t = 4.3027 at two degrees of freedom.
+    """Worked by hand from rates 0.10, 0.12 and 0.14.
+
+    Mean 0.12, standard error 0.02 / sqrt(3), and t = 4.3027 at two degrees
+    of freedom.
+    """
     half = 4.302652729749462 * 0.02 / math.sqrt(3)
 
     assert estimators.cluster_interval(SPREAD) == pytest.approx(
@@ -319,8 +340,11 @@ def test_cluster_interval_of_one_draw_has_undefined_bounds():
 
 
 def test_design_effect_compares_between_and_within_draw_variance():
-    # Between-draw variance 0.0004; mean within-draw variance
-    # (0.1 * 0.9 + 0.12 * 0.88 + 0.14 * 0.86) / 3 / 800 = 0.316 / 2400.
+    """Worked by hand: between-draw variance 0.0004 over 0.316 / 2400.
+
+    The mean within-draw variance is
+    (0.1 * 0.9 + 0.12 * 0.88 + 0.14 * 0.86) / 3 / 800 = 0.316 / 2400.
+    """
     assert estimators.design_effect(SPREAD) == pytest.approx(0.96 / 0.316)
 
 

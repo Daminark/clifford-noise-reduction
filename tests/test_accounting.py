@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 import stim
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from clinr import accounting, checks, circuits, noise_models, protocol
@@ -82,7 +82,6 @@ def check_regions(drawn, noisy_checks, native_plus):
     ]
 
 
-@settings(deadline=None, max_examples=60)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 30),
@@ -120,7 +119,6 @@ def test_regions_count_every_fault_location_the_builder_emits(
     assert fault_locations(built) == accounting.add(*regions)
 
 
-@settings(deadline=None, max_examples=60)
 @given(
     n=st.integers(1, 3),
     size=st.integers(1, 30),
@@ -134,8 +132,12 @@ def test_regions_count_every_fault_location_the_builder_emits(
 def test_overhead_with_certain_acceptance_counts_the_built_operations(
     n, size, t, r, restricted_checks, noisy_checks, native_plus, seed
 ):
-    # With every chunk accepted on its first attempt, the expected number of
-    # operations is exactly the number in one pass through the circuit.
+    """Acceptance 1 makes the expected count that of one pass, built exactly.
+
+    With every chunk accepted on its first attempt, the expected number of
+    operations is the number in one pass through the built circuit, so the
+    builder is the oracle.
+    """
     circuit = seeded_circuit(n, size, seed)
     drawn, built = build(
         circuit, n, t, r, restricted_checks,
@@ -162,10 +164,13 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
     ("noisy_q", "expected"), [(False, 10.0), (True, 31 / 3)]
 )
 def test_expected_overhead_on_a_hand_worked_chunk(noisy_q, expected):
-    # n = 1, one chunk of two single-qubit gates and one CX, one weight-2
-    # check, accepted half the time. Protected region: preparation 4, gates 3,
-    # check 6, so 13 per attempt and 26 expected; teleportation adds 4 once,
-    # frame resolution 1 more; over 3 gates.
+    """Worked by hand: (26 + 4) / 3 = 10, and 31 / 3 with frame resolution.
+
+    One chunk at n = 1 of two single-qubit gates and one CX, with one
+    weight-2 check, accepted half the time.
+    Protected region: preparation 4, gates 3, check 6, so 13 per attempt and
+    26 expected; teleportation adds 4 once, and frame resolution 1 more.
+    """
     overhead = accounting.expected_overhead(
         [(2, 1)],
         1,

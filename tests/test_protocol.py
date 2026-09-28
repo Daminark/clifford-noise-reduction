@@ -5,7 +5,7 @@ import itertools
 import numpy as np
 import pytest
 import stim
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from clinr import checks, circuits, noise_models, protocol
@@ -124,7 +124,6 @@ def test_gate_list_rejects_a_gate_controlled_by_a_sweep_bit():
 # ---------------------------------------------------------------------------
 # chunk_circuit
 # ---------------------------------------------------------------------------
-@settings(deadline=None)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 40),
@@ -166,7 +165,6 @@ def test_chunk_circuit_rejects_a_circuit_wider_than_n():
 # ---------------------------------------------------------------------------
 # stabilizer_gens
 # ---------------------------------------------------------------------------
-@settings(deadline=None)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 30),
@@ -254,7 +252,6 @@ def test_clinr_is_exact_at_zero_noise(
     assert_exact(built)
 
 
-@settings(deadline=None, max_examples=50)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 30),

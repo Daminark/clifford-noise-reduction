@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pytest
 import stim
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from scipy import stats
 
@@ -61,7 +61,6 @@ def bare_z(n: int) -> stim.PauliString:
 # ---------------------------------------------------------------------------
 # random_stabilizer
 # ---------------------------------------------------------------------------
-@settings(deadline=None)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 30),
@@ -80,6 +79,11 @@ def test_random_stabilizer_returns_a_non_identity_stabilizer(n, size, seed):
 
 @pytest.mark.parametrize("n", [1, 2])
 def test_random_stabilizer_is_uniform_over_the_non_identity_elements(n):
+    """Chi-square test at p > 1e-6, about a five-sigma departure.
+
+    With 1000 expected draws per element, an element never drawn, or drawn
+    at twice its share, gives a p-value far below the threshold.
+    """
     _, gens, _ = resource(seeded_circuit(n, 20, seed=n), n)
     rng = np.random.default_rng(0)
     draws = 1000 * (4**n - 1)
@@ -88,7 +92,6 @@ def test_random_stabilizer_is_uniform_over_the_non_identity_elements(n):
     for _ in range(draws):
         tally[unsigned(checks.random_stabilizer(gens, rng))] += 1
 
-    # A p-value below 1e-6 is about a five-sigma departure from uniform.
     assert stats.chisquare(list(tally.values())).pvalue > 1e-6
 
 
@@ -107,7 +110,6 @@ def test_random_stabilizer_rejects_an_empty_generating_set():
 # ---------------------------------------------------------------------------
 # restricted_family
 # ---------------------------------------------------------------------------
-@settings(deadline=None)
 @given(
     n=st.integers(1, 4),
     size=st.integers(0, 30),
@@ -152,7 +154,6 @@ def test_worst_case_per_draw_miss_is_the_constant_the_bounds_use(n):
 # ---------------------------------------------------------------------------
 # draw_checks
 # ---------------------------------------------------------------------------
-@settings(deadline=None)
 @given(
     n=st.integers(1, 3),
     size=st.integers(0, 30),
@@ -201,6 +202,14 @@ def test_draw_checks_repeats_its_draws_for_the_same_seed():
 def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     restricted_checks,
 ):
+    """Five-sigma binomial bounds on single draws and on triples.
+
+    At 30000 draws, 5 sigma on the single-draw rate is about 0.014, well
+    inside the gap of 0.033 between 7/15 and the 1/2 a sampler that could
+    return the identity would give.
+    The triple rate q**3, at about 0.015 for 5 sigma, checks independence:
+    a sampler that reused draws would miss triples at a rate nearer q**2.
+    """
     n, draws = 2, 30000
     circuit = seeded_circuit(n, 20, seed=5)
     q = 1 - 2 / (3 * n) if restricted_checks else 7 / 15

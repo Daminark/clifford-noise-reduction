@@ -22,7 +22,7 @@ def test_noise_model_accepts_the_endpoints(value):
 
 
 def test_asymmetric_noise_is_the_papers_section_v_regime_by_default():
-    # Two-qubit gates ten times noisier than every other operation.
+    """Sec. V of arXiv:2407.06583: two-qubit gates ten times noisier."""
     assert noise_models.asymmetric_noise(1e-3) == noise_models.NoiseModel(
         p1=1e-4, p2=1e-3, p_m=1e-4, p_prep=1e-4
     )

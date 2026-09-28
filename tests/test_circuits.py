@@ -2,13 +2,12 @@
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from clinr import circuits, protocol
 
 
-@settings(deadline=None)
 @given(
     n=st.integers(1, 4),
     size=st.integers(0, 50),

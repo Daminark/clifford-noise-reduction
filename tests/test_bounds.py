@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 import stim
-from hypothesis import assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from clinr import bounds, circuits, estimators, noise_models
@@ -54,7 +54,6 @@ THEOREM_1 = {
 }
 
 
-@settings(deadline=None, max_examples=200)
 @given(**THEOREM_1)
 def test_plog_bound_never_exceeds_theorem_1(n, size, t, r, p, seed):
     circuit = seeded_circuit(n, size, seed)
@@ -65,14 +64,16 @@ def test_plog_bound_never_exceeds_theorem_1(n, size, t, r, p, seed):
     assert plog <= paper_plog(n, size, t, r, p)
 
 
-@settings(deadline=None, max_examples=200)
 @given(**THEOREM_1)
 def test_overhead_bound_never_exceeds_theorem_1_where_it_applies(
     n, size, t, r, p, seed
 ):
-    # The paper's proof uses t * ceil(s/t) <= 2s, which holds for t <= 2s.
-    # Beyond it, empty chunks each still pay a teleportation, which this
-    # implementation charges and the paper's formula does not cover.
+    """Compared only where Theorem 1's overhead formula holds.
+
+    The proof of Theorem 1 of arXiv:2407.06583 uses t * ceil(s/t) <= 2s.
+    Beyond it, empty chunks each still pay a teleportation, which this
+    implementation charges and the paper's formula does not cover.
+    """
     assume(t * -(-size // t) <= 2 * size)
     circuit = seeded_circuit(n, size, seed)
     noise = noise_models.uniform_noise(p)
@@ -86,10 +87,13 @@ def test_overhead_bound_never_exceeds_theorem_1_where_it_applies(
 # Worked examples
 # ---------------------------------------------------------------------------
 def test_bounds_on_a_hand_worked_uniform_example():
-    # n = 1, C = H, t = 1, r = 2 uniform checks of worst-case weight 2n = 2.
-    # Per-draw miss (2^1 - 1)/(2^2 - 1) = 1/3: miss 1/9, escapes 1 + 1/3.
-    # Locations: preparation 4 (2 resets, H, CX), resource with C 5, one
-    # check gadget 6, teleportation 4, protected region 4 + 1 + 12 = 17.
+    """Worked by hand at n = 1, C = H, t = 1 and r = 2 uniform checks.
+
+    Worst-case check weight 2n = 2.
+    Per-draw miss (2^1 - 1)/(2^2 - 1) = 1/3: miss 1/9, escapes 1 + 1/3.
+    Locations: preparation 4 (2 resets, H, CX), resource with C 5, one
+    check gadget 6, teleportation 4, protected region 4 + 1 + 12 = 17.
+    """
     circuit = stim.Circuit("H 0")
     plog = (g(P, 5) / 9 + g(P, 6) * 4 / 3 + g(P, 4)) / (1 - P) ** 17
     overhead = (4 + 17 / (1 - P) ** 17) / 1
@@ -101,10 +105,13 @@ def test_bounds_on_a_hand_worked_uniform_example():
 
 
 def test_bounds_on_a_hand_worked_restricted_example():
-    # n = 2, C = CX, t = 1, r = 1 check from the restricted family, of
-    # worst-case weight n + 1 = 3. Per-draw miss 1 - 2/(3n) = 2/3; escapes 1.
-    # Locations: preparation 8, resource with C 9, one check gadget 7,
-    # teleportation 8, protected region 8 + 1 + 7 = 16.
+    """Worked by hand at n = 2, C = CX, t = 1 and r = 1 restricted check.
+
+    Worst-case check weight n + 1 = 3.
+    Per-draw miss 1 - 2/(3n) = 2/3; escapes 1.
+    Locations: preparation 8, resource with C 9, one check gadget 7,
+    teleportation 8, protected region 8 + 1 + 7 = 16.
+    """
     circuit = stim.Circuit("CX 0 1")
     plog = (g(P, 9) * 2 / 3 + g(P, 7) + g(P, 8)) / (1 - P) ** 16
     overhead = (8 + 16 / (1 - P) ** 16) / 1
@@ -144,7 +151,6 @@ def test_fault_prob_rejects_negative_counts():
 RATES = ("p1", "p2", "p_m", "p_prep")
 
 
-@settings(deadline=None)
 @given(
     rates=st.tuples(*[st.floats(0.0, 0.01)] * 4),
     which=st.sampled_from(RATES),
@@ -188,27 +194,45 @@ def test_idealized_checks_never_make_the_bound_worse(restricted_checks):
 # ---------------------------------------------------------------------------
 # Soundness against measurement
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("n", [2, 3])
-@pytest.mark.parametrize("t", [1, 2])
-@pytest.mark.parametrize("r", [0, 2, 4])
+SOUNDNESS_CASES = [
+    (n, t, r) for n in (2, 3, 8) for t in (1, 2) for r in (0, 2, 4)
+] + [(25, 1, r) for r in (0, 4)]
+
+
+@pytest.mark.parametrize(
+    ("draws", "shots"),
+    [
+        pytest.param(8, 20000, id="quick"),
+        pytest.param(32, 50000, id="precise", marks=pytest.mark.slow),
+    ],
+)
+@pytest.mark.parametrize(("n", "t", "r"), SOUNDNESS_CASES)
 @pytest.mark.parametrize("restricted_checks", [False, True])
 @pytest.mark.parametrize("noisy_checks", [True, False])
 def test_measured_logical_error_rate_never_exceeds_the_bound(
-    n, t, r, restricted_checks, noisy_checks
+    n, t, r, restricted_checks, noisy_checks, draws, shots
 ):
-    # The bound covers the protocol, which draws its checks at random, so the
-    # measurement averages over draws; one fixed check set may do worse.
+    """Mean over random check draws, with 5 standard errors of slack.
+
+    The bound covers the protocol, which draws its checks at random, so the
+    measurement averages over draws; one fixed check set may do worse.
+    The standard error is that of the mean of the per-draw rates, so it
+    counts the spread between draws, which dominates, as well as shot noise.
+    The slack is at most 10% of the bound in the quick tier (8 draws of 2e4
+    shots) and 4% in the precise tier (32 draws of 5e4 shots), so an unsound
+    bound passes only if it understates the rate by less than that.
+    """
     noise = noise_models.asymmetric_noise(2e-3)
-    circuit = seeded_circuit(n, 25, seed=n)
+    circuit = seeded_circuit(n, 16 * n, seed=n)
     rng = np.random.default_rng(1000 * n + 100 * t + 10 * r)
-    draws = [
+    estimates = [
         estimators.estimate_clinr(
-            circuit, n, t, r, noise, 20000, rng,
+            circuit, n, t, r, noise, shots, rng,
             restricted_checks=restricted_checks, noisy_checks=noisy_checks,
         )
-        for _ in range(8)
+        for _ in range(draws)
     ]
-    rates = [e.p_log for e in draws]
+    rates = [e.p_log for e in estimates]
     mean = sum(rates) / len(rates)
     standard_error = float(np.std(rates, ddof=1)) / math.sqrt(len(rates))
 
@@ -223,7 +247,6 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
 # ---------------------------------------------------------------------------
 # choose_tr
 # ---------------------------------------------------------------------------
-@settings(deadline=None, max_examples=60)
 @given(
     n=st.integers(1, 3),
     size=st.integers(1, 20),
@@ -298,8 +321,11 @@ def test_overhead_bound_rejects_a_circuit_without_gates():
 
 
 def test_resolving_the_frame_adds_n_single_qubit_locations_once():
-    # n = 2 at p = 0.01: 1 - 0.99^2 on the logical error rate, and 2
-    # operations over the circuit's 4 gates on the overhead, for any t.
+    """Worked by hand at n = 2 and p = 0.01, for any t.
+
+    The logical error rate gains 1 - 0.99^2, and the overhead gains 2
+    operations over the circuit's 4 gates.
+    """
     circuit = seeded_circuit(2, 4, seed=0)
 
     for t in (1, 2, 4):
