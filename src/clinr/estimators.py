@@ -23,12 +23,12 @@ from dataclasses import dataclass
 
 import numpy as np
 import stim
+from scipy import stats
 
 from . import accounting, checks, protocol
 from .noise_models import NoiseModel
 
 __all__ = [
-    "Z_95",
     "wilson_interval",
     "Estimate",
     "estimate_clinr",
@@ -41,38 +41,37 @@ __all__ = [
     "mean_gate_overhead",
 ]
 
-# Normal quantile for a two-sided 95% interval.
-Z_95 = 1.959963984540054
-
-# Student t quantiles for a two-sided 95% interval, indexed by degrees of
-# freedom (entry 0 unused). Beyond the table the normal quantile is used: it
-# is about 4% narrower at 31 degrees of freedom and under 1% past 130.
-_T_95 = (
-    math.nan,
-    12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
-    2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
-    2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042,
-)
+def _check_confidence(confidence: float) -> None:
+    """Reject a confidence level outside the open interval ``(0, 1)``."""
+    if not 0.0 < confidence < 1.0:
+        raise ValueError(
+            f"confidence must lie strictly between 0 and 1, got {confidence}"
+        )
 
 
 def wilson_interval(
-    errors: int, trials: int, z: float = Z_95
+    errors: int, trials: int, confidence: float = 0.95
 ) -> tuple[float, float, float]:
     """Return ``(point, lo, hi)``, a Wilson score interval for a proportion.
+
+    Computed by :func:`scipy.stats.binomtest`. Its argument checks do not
+    cover the zero-trials case, which returns before SciPy is called, so the
+    preconditions are checked here.
 
     Args:
         errors: Number of successes observed.
         trials: Number of independent trials.
-        z: Normal quantile setting the confidence level.
+        confidence: Confidence level, strictly between 0 and 1.
 
     Returns:
-        The point estimate ``errors / trials`` and the interval bounds, both
-        clipped to ``[0, 1]``. With no trials the point estimate is ``nan``
-        and the interval is ``(0, 1)``.
+        The point estimate ``errors / trials`` and the interval bounds, which
+        lie in ``[0, 1]``. With no trials the point estimate is ``nan`` and
+        the interval is ``(0, 1)``.
 
     Raises:
         ValueError: if ``trials`` or ``errors`` is negative, if ``errors``
-            exceeds ``trials``, or if ``z`` is not positive.
+            exceeds ``trials``, or if ``confidence`` is not strictly between
+            0 and 1.
     """
     if trials < 0:
         raise ValueError(f"trials must be non-negative, got {trials}")
@@ -80,16 +79,13 @@ def wilson_interval(
         raise ValueError(f"errors must be non-negative, got {errors}")
     if errors > trials:
         raise ValueError(f"errors ({errors}) cannot exceed trials ({trials})")
-    if z <= 0:
-        raise ValueError(f"z must be positive, got {z}")
+    _check_confidence(confidence)
     if trials == 0:
         return math.nan, 0.0, 1.0
-
-    z2 = z * z
-    centre = (errors + z2 / 2.0) / (trials + z2)
-    spread = math.sqrt(errors * (trials - errors) / trials + z2 / 4.0)
-    half = z * spread / (trials + z2)
-    return errors / trials, max(0.0, centre - half), min(1.0, centre + half)
+    ci = stats.binomtest(errors, trials).proportion_ci(
+        confidence, method="wilson"
+    )
+    return errors / trials, float(ci.low), float(ci.high)
 
 
 @dataclass(frozen=True)
@@ -114,8 +110,11 @@ class Estimate:
     rather than being handed a circuit it has to trust.
 
     Raises:
-        ValueError: if the per-chunk tuples have different lengths, or if the
-            chunk gate counts do not sum to ``(s1, s2)``.
+        ValueError: if ``shots`` is not positive; if any count is negative;
+            if ``accepted`` exceeds ``shots`` or ``errors`` exceeds
+            ``accepted``; if a chunk accepted more than ``shots`` or fewer
+            than ``accepted``; if the per-chunk tuples have different
+            lengths; or if the chunk gate counts do not sum to ``(s1, s2)``.
     """
 
     shots: int
@@ -129,6 +128,45 @@ class Estimate:
     chunk_counts: tuple[tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
+        if self.shots < 1:
+            raise ValueError(f"shots must be positive, got {self.shots}")
+        for name, value in (
+            ("accepted", self.accepted),
+            ("errors", self.errors),
+            ("s1", self.s1),
+            ("s2", self.s2),
+        ):
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative, got {value}")
+        for name, values in (
+            ("chunk_accepted", self.chunk_accepted),
+            ("chunk_checks", self.chunk_checks),
+            ("chunk_weight", self.chunk_weight),
+            ("chunk_counts", tuple(c for p in self.chunk_counts for c in p)),
+        ):
+            if any(v < 0 for v in values):
+                raise ValueError(f"{name} must be non-negative, got {values}")
+        if self.accepted > self.shots:
+            raise ValueError(
+                f"accepted ({self.accepted}) cannot exceed shots "
+                f"({self.shots})"
+            )
+        if self.errors > self.accepted:
+            raise ValueError(
+                f"errors ({self.errors}) cannot exceed accepted "
+                f"({self.accepted})"
+            )
+        if any(a > self.shots for a in self.chunk_accepted):
+            raise ValueError(
+                f"no chunk can accept more than the {self.shots} shots, got "
+                f"{self.chunk_accepted}"
+            )
+        if any(a < self.accepted for a in self.chunk_accepted):
+            raise ValueError(
+                "every chunk accepts at least the "
+                f"{self.accepted} shots accepted overall, got "
+                f"{self.chunk_accepted}"
+            )
         lengths = {
             len(self.chunk_accepted),
             len(self.chunk_checks),
@@ -167,13 +205,15 @@ class Estimate:
         """Point estimate of the logical error rate among accepted shots."""
         return math.nan if self.accepted == 0 else self.errors / self.accepted
 
-    def interval(self, z: float = Z_95) -> tuple[float, float, float]:
+    def interval(
+        self, confidence: float = 0.95
+    ) -> tuple[float, float, float]:
         """Return ``(point, lo, hi)`` for the logical error rate.
 
         The accepted count is the effective sample size, so rejecting more
         shots widens the interval.
         """
-        return wilson_interval(self.errors, self.accepted, z)
+        return wilson_interval(self.errors, self.accepted, confidence)
 
 
 def _tally(
@@ -398,24 +438,27 @@ def _comparable(estimates: list[Estimate]) -> None:
             raise ValueError("an estimate accepted no shots")
 
 
-def cluster_interval(estimates: list[Estimate]) -> tuple[float, float, float]:
+def cluster_interval(
+    estimates: list[Estimate], confidence: float = 0.95
+) -> tuple[float, float, float]:
     """Return ``(point, lo, hi)`` for the logical error rate over check sets.
 
     Each estimate is one draw of the check sets, so a draw is the unit of
     observation and its shots are not independent of each other. The point
     estimate is the mean of the per-draw rates and the interval is the
-    two-sided 95% Student t interval on those means, clamped to ``[0, 1]``.
-    Pooling the shots instead and taking a Wilson interval understates the
-    uncertainty whenever draws differ systematically
-    (:func:`design_effect` measures that).
+    two-sided Student t interval on those means at level ``confidence``,
+    clamped to ``[0, 1]``. Pooling the shots instead and taking a Wilson
+    interval understates the uncertainty whenever draws differ
+    systematically (:func:`design_effect` measures that).
 
-    The confidence level is fixed at 95%, the level the ``t`` table covers.
     With one draw the bounds are ``nan``.
 
     Raises:
-        ValueError: on the conditions of :func:`_comparable`.
+        ValueError: on the conditions of :func:`_comparable`, or if
+            ``confidence`` is not strictly between 0 and 1.
     """
     _comparable(estimates)
+    _check_confidence(confidence)
     rates = [e.p_log for e in estimates]
     point = sum(rates) / len(rates)
     if len(rates) < 2:
@@ -424,7 +467,7 @@ def cluster_interval(estimates: list[Estimate]) -> tuple[float, float, float]:
     spread = math.sqrt(
         sum((r - point) ** 2 for r in rates) / df / len(rates)
     )
-    t = _T_95[df] if df < len(_T_95) else Z_95
+    t = float(stats.t.ppf((1.0 + confidence) / 2.0, df))
     return point, max(0.0, point - t * spread), min(1.0, point + t * spread)
 
 
@@ -435,9 +478,13 @@ def design_effect(estimates: list[Estimate]) -> float:
     make them, so a Wilson interval on the pooled shots would be honest.
     Larger values say clustered intervals should be wider by its square root.
 
+    A draw that saw no errors contributes zero within-draw variance, so the
+    ratio is biased upward when errors are rare.
+
     Raises:
-        ValueError: on the conditions of :func:`_comparable`, or if fewer than
-            two estimates are given.
+        ValueError: on the conditions of :func:`_comparable`, if fewer than
+            two estimates are given, or if every draw's rate is 0 or 1, which
+            leaves the within-draw variance zero and the ratio undefined.
     """
     _comparable(estimates)
     if len(estimates) < 2:
@@ -449,6 +496,11 @@ def design_effect(estimates: list[Estimate]) -> float:
         r * (1.0 - r) / e.accepted
         for r, e in zip(rates, estimates, strict=True)
     ) / len(estimates)
+    if within == 0.0:
+        raise ValueError(
+            "design effect is undefined: every draw saw no errors or only "
+            "errors, so the within-draw variance is zero"
+        )
     return between / within
 
 

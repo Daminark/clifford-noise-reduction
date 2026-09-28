@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "numpy>=2.5.1",
+    "scipy>=1.18.1",
     "stim>=1.16.0",
 ]
 
