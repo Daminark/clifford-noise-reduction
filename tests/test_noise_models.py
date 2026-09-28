@@ -28,7 +28,24 @@ def test_asymmetric_noise_is_the_papers_section_v_regime_by_default():
     )
 
 
-@pytest.mark.parametrize("ratio", [0.0, -2.0])
+@pytest.mark.parametrize("p", [-0.01, 1.01])
+def test_uniform_noise_rejects_a_rate_outside_the_unit_interval(p):
+    with pytest.raises(ValueError, match="p must lie in"):
+        noise_models.uniform_noise(p)
+
+
+@pytest.mark.parametrize("p2", [-0.01, 1.01])
+def test_asymmetric_noise_rejects_a_rate_outside_the_unit_interval(p2):
+    with pytest.raises(ValueError, match="p2 must lie in"):
+        noise_models.asymmetric_noise(p2)
+
+
+@pytest.mark.parametrize("ratio", [0.0, -2.0, float("nan")])
 def test_asymmetric_noise_rejects_a_ratio_that_is_not_positive(ratio):
     with pytest.raises(ValueError, match="ratio must be positive"):
         noise_models.asymmetric_noise(1e-3, ratio)
+
+
+def test_asymmetric_noise_rejects_other_rates_above_one():
+    with pytest.raises(ValueError, match="p2 / ratio must not exceed 1"):
+        noise_models.asymmetric_noise(0.5, 0.25)
