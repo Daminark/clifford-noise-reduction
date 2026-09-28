@@ -16,16 +16,43 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.3",
     "ipykernel>=7.3.0",
     "jupyterlab>=4.6.1",
     "matplotlib>=3.11.0",
     "nbmake>=1.5.5",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.8",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clinr"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"             # oldest pytest with every option used here
+addopts = [
+    "-ra",                     # summarise every outcome but passes
+    "--showlocals",            # print local variables in tracebacks
+    "--strict-markers",        # an undeclared marker is an error, not a typo
+    "--strict-config",         # a malformed option here is an error
+    "--import-mode=importlib", # test the installed package, not src/
+    "-m", "not slow",          # local default; CI runs "slow or not slow"
+]
+xfail_strict = true            # an expected failure that passes is a failure
+filterwarnings = ["error"]     # warnings, deprecations included, fail tests
+log_level = "INFO"             # captured logs shown on failure, from INFO up
+testpaths = ["tests"]
+markers = [
+    "slow: sampled or exhaustive tests, deselected by default",
+]
+
+[tool.coverage.run]
+source_pkgs = ["clinr"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.ruff]
 line-length = 79
@@ -35,6 +62,10 @@ select = ["E", "W", "F", "I", "B", "UP", "D", "NPY", "RUF"]
 # __all__ mirrors each module's definition order, which is itself ordered
 # by dependency; alphabetising it would lose that.
 ignore = ["RUF022"]
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name states the behaviour it checks, so a docstring would repeat it.
+"tests/**" = ["D1"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

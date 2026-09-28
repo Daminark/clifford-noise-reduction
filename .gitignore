@@ -18,3 +18,7 @@ wheels/
 
 # OS
 .DS_Store
+
+# Test artifacts
+.hypothesis/
+.coverage
