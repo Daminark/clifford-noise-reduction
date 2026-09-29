@@ -27,7 +27,7 @@ def resource(circuit: stim.Circuit, n: int):
     tableau = protocol.chunk_circuit(circuit, n, 1)[0].to_tableau()
     bare, image = list(range(n)), list(range(n, 2 * n))
     gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
-    family = checks.restricted_family(tableau, n, bare, image, 2 * n)
+    family = checks.restricted_family(tableau, bare, image, 2 * n)
     return tableau, gens, family
 
 
@@ -105,6 +105,20 @@ def test_random_stabilizer_rejects_a_legacy_random_state():
 def test_random_stabilizer_rejects_an_empty_generating_set():
     with pytest.raises(ValueError, match="must not be empty"):
         checks.random_stabilizer([], np.random.default_rng(0))
+
+
+def test_random_stabilizer_rejects_generators_of_different_lengths():
+    gens = [stim.PauliString("XX"), stim.PauliString("ZZZ")]
+
+    with pytest.raises(ValueError, match="share one length"):
+        checks.random_stabilizer(gens, np.random.default_rng(0))
+
+
+def test_random_stabilizer_rejects_generators_of_only_the_identity():
+    gens = [stim.PauliString("__"), stim.PauliString("__")]
+
+    with pytest.raises(ValueError, match="only the identity"):
+        checks.random_stabilizer(gens, np.random.default_rng(0))
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +242,15 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     assert abs(triple - q**3) < 5 * math.sqrt(
         q**3 * (1 - q**3) / len(triples)
     )
+
+
+@pytest.mark.parametrize("restricted_checks", [False, True])
+def test_draw_checks_rejects_a_legacy_random_state(restricted_checks):
+    with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
+        checks.draw_checks(
+            seeded_circuit(2, 5, seed=0), 2, 1, 2, np.random.RandomState(0),
+            restricted_checks=restricted_checks,
+        )
 
 
 def test_draw_checks_rejects_a_negative_check_count():

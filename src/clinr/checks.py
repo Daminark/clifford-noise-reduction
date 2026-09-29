@@ -1,16 +1,17 @@
-"""Choosing which stabilizers to measure.
+"""Choosing which stabilizers of a chunk's resource state to measure.
 
-The verification sequence of a CliNR chunk is an ordered ``r``-tuple of
-stabilizers of its resource state, and which tuple is drawn is a policy
-separate from the circuit that measures it. This module holds the policy;
-:mod:`protocol` holds the construction, and :mod:`bounds` holds the
-detection probabilities the policy implies.
+The ``r`` checks of a chunk are drawn independently and identically, with
+replacement, from one of two families: the non-identity elements of the full
+stabilizer group, whose weight is at most ``2n``, as the proof of Theorem 1
+of [1]_ assumes; or the restricted family of [1]_, Sec. V, the ``3n``
+stabilizers propagated from the Bell pairs, whose weight is at most
+``n + 1``. :mod:`clinr.protocol` measures the checks and :mod:`clinr.bounds`
+prices what each family detects.
 
-Two families are offered, both drawn independently and identically: the
-full stabilizer group, whose elements have weight up to ``2n``, and the
-restricted family of arXiv:2407.06583 Sec. V, the ``3n`` propagated Bell
-stabilizers, whose elements have weight at most ``n + 1`` and are therefore
-cheaper to measure.
+References
+----------
+.. [1] N. Delfosse and E. Tham, "Low-cost noise reduction for Clifford
+   circuits", arXiv:2407.06583 (2024).
 """
 
 from __future__ import annotations
@@ -27,38 +28,56 @@ __all__ = [
 ]
 
 
+def _check_rng(rng: np.random.Generator) -> None:
+    """Raise ``TypeError`` unless ``rng`` is a ``numpy.random.Generator``."""
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError(
+            f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Check families
 # ---------------------------------------------------------------------------
 def random_stabilizer(
     gens: list[stim.PauliString], rng: np.random.Generator
 ) -> stim.PauliString:
-    """Sample a uniformly random *non-identity* element of ``⟨gens⟩``.
+    """Return a uniformly random non-identity element of the group of ``gens``.
 
-    The stabilizer group is elementary abelian (``S ≅ F_2^{2n}`` with ``gens`` a
-    basis), so an independent fair coin per generator yields a uniform group
-    element. The identity element is rejected: it has no valid ``MPP`` targets
-    and carries no information as a check.
+    Each generator is included in the product with probability 1/2, which is
+    uniform over the group, and the identity is redrawn.
 
-    The returned Pauli has the width of ``gens``.
+    Parameters
+    ----------
+    gens : list of stim.PauliString
+        Pairwise commuting generators of one length, not all the identity,
+        such as those of :func:`clinr.protocol.stabilizer_gens`.
+    rng : numpy.random.Generator
+        Source of randomness.
 
-    Args:
-        gens: Independent generators, as returned by
-            :func:`protocol.stabilizer_gens`.
-        rng: A NumPy generator. Passing the generator (rather than a seed) lets
-            a caller thread one stream through repeated draws so that the draws
-            are independent; the explicit type is enforced to reject objects
-            whose ``.random`` has a different contract.
+    Returns
+    -------
+    stim.PauliString
+        Of the length of ``gens``, with a sign that nothing downstream reads.
 
-    Raises:
-        TypeError: if ``rng`` is not a ``numpy.random.Generator``.
-        ValueError: if ``gens`` is empty.
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``gens`` is empty, if its elements differ in length, or if every
+        element is the identity.
     """
-    if not isinstance(rng, np.random.Generator):
-        raise TypeError("rng must be a numpy.random.Generator")
+    _check_rng(rng)
     if not gens:
         raise ValueError("gens must not be empty")
     total = len(gens[0])
+    if any(len(gen) != total for gen in gens):
+        raise ValueError(
+            f"gens must share one length, got {sorted({len(g) for g in gens})}"
+        )
+    if all(gen.weight == 0 for gen in gens):
+        raise ValueError("gens generate only the identity")
     while True:
         take = rng.random(len(gens)) < 0.5
         product = stim.PauliString(total)
@@ -70,26 +89,32 @@ def random_stabilizer(
 
 
 def restricted_family(
-    tableau: stim.Tableau, n: int, bare: list[int], image: list[int], total: int
+    tableau: stim.Tableau, bare: list[int], image: list[int], total: int
 ) -> list[stim.PauliString]:
-    """The weight-``(n+1)`` check family used by the paper's Sec. V numerics.
+    """Return the restricted check family of arXiv:2407.06583, Sec. V.
 
-    The weight-2 Bell stabilizers propagated through ``I ⊗ C``: for each pair,
-    the images of ``XX``, ``ZZ`` and ``YY``. Propagation commutes with taking
-    products, so the third is the product of the first two, up to a phase that
-    nothing downstream reads.
+    With ``n = len(tableau)``, the family is the images of the Bell
+    stabilizers ``XX``, ``ZZ`` and ``YY`` of each pair under ``I ⊗ C``, in
+    that order, pair by pair. The third of each triple is the product of the
+    first two, up to a sign that nothing downstream reads.
 
-    Returns ``3n`` elements, each of weight 1 on ``bare`` and at most ``n`` on
-    ``image``, none of them the identity. Arguments are as in
-    :func:`protocol.stabilizer_gens`.
+    Parameters
+    ----------
+    tableau, bare, image, total
+        As in :func:`clinr.protocol.stabilizer_gens`.
+
+    Returns
+    -------
+    list of stim.PauliString
+        ``3n`` stabilizers of the resource state, none the identity, each of
+        weight 1 on ``bare`` and at most ``n`` on ``image``.
     """
     gens = protocol.stabilizer_gens(tableau, bare, image, total)
     family: list[stim.PauliString] = []
-    for i in range(n):
+    for i in range(len(tableau)):
         gx, gz = gens[2 * i], gens[2 * i + 1]
         family += [gx, gz, gx * gz]
     return family
-
 
 
 # ---------------------------------------------------------------------------
@@ -106,32 +131,44 @@ def draw_checks(
 ) -> list[list[stim.PauliString]]:
     """Draw ``r`` checks for each of the ``t`` chunks of ``circuit``.
 
-    Each check is a length-``2n`` Pauli on the resource state of its chunk,
-    with positions ``[0, n)`` on the bare half and ``[n, 2n)`` on the half
-    carrying the chunk.
-
     The ``r`` checks of a chunk are drawn independently and identically,
-    with replacement, which is the convention Appendix B of the paper proves
-    under: a damaging fault makes the ``r`` outcomes a uniform bit-string, so
-    the per-draw misses multiply. A check may therefore be drawn twice.
+    with replacement, the convention of arXiv:2407.06583, App. B, so a check
+    may be drawn twice.
 
-    Args:
-        circuit: The Clifford circuit ``C`` over ``n`` qubits.
-        n: Number of data qubits.
-        t: Number of chunks.
-        r: Number of checks per chunk.
-        rng: NumPy generator, drawn from in chunk order.
-        restricted_checks: If True, draw from :func:`restricted_family`;
-            otherwise draw from the non-identity elements of the full
-            stabilizer group.
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The Clifford circuit ``C``, as accepted by
+        :func:`clinr.protocol.chunk_circuit`, on qubits ``[0, n)``.
+    n : int
+        Number of data qubits. Must be at least 1.
+    t : int
+        Number of chunks. Must be at least 1.
+    r : int
+        Number of checks per chunk. Must be non-negative.
+    rng : numpy.random.Generator
+        Source of randomness, drawn from in chunk order.
+    restricted_checks : bool, optional
+        If True, draw uniformly from :func:`restricted_family`; if False,
+        from the non-identity elements of the full stabilizer group, with
+        :func:`random_stabilizer`.
 
-    Returns:
-        ``t`` lists of ``r`` checks, in chunk order.
+    Returns
+    -------
+    list of list of stim.PauliString
+        ``t`` lists of ``r`` checks, in chunk order, as
+        :func:`clinr.protocol.build_clinr_tr` takes them: length ``2n``,
+        the bare half on ``[0, n)`` and the half carrying the chunk on
+        ``[n, 2n)``.
 
-    Raises:
-        ValueError: if ``r`` is negative, or from
-            :func:`protocol.chunk_circuit`.
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``r`` is negative.
     """
+    _check_rng(rng)
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     bare, image = list(range(n)), list(range(n, 2 * n))
@@ -139,7 +176,7 @@ def draw_checks(
     for chunk in protocol.chunk_circuit(circuit, n, t):
         tableau = chunk.to_tableau()
         if restricted_checks:
-            pool = restricted_family(tableau, n, bare, image, 2 * n)
+            pool = restricted_family(tableau, bare, image, 2 * n)
             checks.append(
                 [pool[int(rng.integers(len(pool)))] for _ in range(r)]
             )
