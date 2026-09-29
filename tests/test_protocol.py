@@ -177,7 +177,7 @@ def test_stabilizer_gens_generate_the_stabilizer_group_of_the_resource(
     bare, image = list(range(n)), list(range(n, 2 * n))
 
     gens = protocol.stabilizer_gens(
-        full_tableau(circuit, n), n, bare, image, 2 * n
+        full_tableau(circuit, n), bare, image, 2 * n
     )
 
     # The resource state, prepared independently by simulation: Bell pairs
@@ -204,7 +204,7 @@ def test_choi_observables_detect_every_error_on_the_output(n):
     circuit = seeded_circuit(n, 25, seed=n)
     ref, data = list(range(n)), list(range(n, 2 * n))
     observables = protocol.stabilizer_gens(
-        full_tableau(circuit, n), n, ref, data, 2 * n
+        full_tableau(circuit, n), ref, data, 2 * n
     )
 
     for letters in itertools.product("IXYZ", repeat=n):
@@ -212,6 +212,22 @@ def test_choi_observables_detect_every_error_on_the_output(n):
             continue
         error = stim.PauliString("I" * n + "".join(letters))
         assert any(not error.commutes(obs) for obs in observables), letters
+
+
+@pytest.mark.parametrize(
+    ("width", "bare", "image", "total", "message"),
+    [
+        (0, [], [], 0, "at least one qubit"),
+        (2, [0], [1, 2], 4, "must each hold 2 indices"),
+        (2, [0, 1], [1, 2], 4, "repeat an index"),
+        (2, [0, 1], [2, 3], 3, r"must lie in \[0, 3\)"),
+    ],
+)
+def test_stabilizer_gens_rejects_a_layout_that_does_not_fit_the_tableau(
+    width, bare, image, total, message
+):
+    with pytest.raises(ValueError, match=message):
+        protocol.stabilizer_gens(stim.Tableau(width), bare, image, total)
 
 
 # ---------------------------------------------------------------------------

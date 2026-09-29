@@ -83,7 +83,7 @@ def restricted_family(
     ``image``, none of them the identity. Arguments are as in
     :func:`protocol.stabilizer_gens`.
     """
-    gens = protocol.stabilizer_gens(tableau, n, bare, image, total)
+    gens = protocol.stabilizer_gens(tableau, bare, image, total)
     family: list[stim.PauliString] = []
     for i in range(n):
         gx, gz = gens[2 * i], gens[2 * i + 1]
@@ -144,6 +144,6 @@ def draw_checks(
                 [pool[int(rng.integers(len(pool)))] for _ in range(r)]
             )
         else:
-            gens = protocol.stabilizer_gens(tableau, n, bare, image, 2 * n)
+            gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
             checks.append([random_stabilizer(gens, rng) for _ in range(r)])
     return checks

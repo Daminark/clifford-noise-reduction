@@ -26,7 +26,7 @@ def resource(circuit: stim.Circuit, n: int):
     """
     tableau = protocol.chunk_circuit(circuit, n, 1)[0].to_tableau()
     bare, image = list(range(n)), list(range(n, 2 * n))
-    gens = protocol.stabilizer_gens(tableau, n, bare, image, 2 * n)
+    gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
     family = checks.restricted_family(tableau, n, bare, image, 2 * n)
     return tableau, gens, family
 
