@@ -1,18 +1,18 @@
-"""Random Clifford circuit generators.
-
-Two constructions, matching the two the paper uses.
+"""Random Clifford circuits to protect.
 
 :func:`random_gate_sequence` draws gates uniformly from ``{H, S, CX}``, the
-Appendix D construction, and is fully seeded: the circuits a given
-``numpy.random.Generator`` produces are reproducible across machines and
-library versions.
+construction of [1]_, App. D, and is reproducible from a NumPy generator.
+:func:`random_clifford` samples a uniformly random Clifford [2]_ and
+synthesises it over ``{H, S, CX}``, the construction of [1]_, Sec. V; Stim's
+sampler takes no seed, so these circuits are not reproducible, and
+:func:`save_circuits` and :func:`load_circuits` keep a generated set.
 
-:func:`random_clifford` samples a uniformly random Clifford and synthesises it,
-the Sec. V construction. This one is **not** reproducible: Stim's sampler
-takes no seed, and Stim documents its synthesis as unstable across versions
-and possibly randomized, so fixing the tableau would not be enough either.
-:func:`save_circuits` and :func:`load_circuits` exist so that a generated set
-can be committed and reused.
+References
+----------
+.. [1] N. Delfosse and E. Tham, "Low-cost noise reduction for Clifford
+   circuits", arXiv:2407.06583 (2024).
+.. [2] S. Bravyi and D. Maslov, "Hadamard-free circuits expose the structure
+   of the Clifford group", arXiv:2003.09412 (2020).
 """
 
 from __future__ import annotations
@@ -35,18 +35,44 @@ __all__ = [
 def random_gate_sequence(
     n: int, size: int, rng: np.random.Generator
 ) -> stim.Circuit:
-    """Sample ``size`` gates uniformly from ``{H, S, CX}`` on ``n`` qubits.
+    """Return ``size`` gates drawn uniformly from ``{H, S, CX}``.
 
-    Targets are uniform, and the two targets of a ``CX`` are distinct. With
-    ``n = 1`` only ``H`` and ``S`` are drawn. Qubits the sample never touches
-    are left implicit, so the circuit may act on fewer than ``n`` qubits.
+    Each gate is ``H``, ``S`` or ``CX`` with equal probability (``H`` or
+    ``S`` when ``n = 1``); a single-qubit gate acts on a uniformly random
+    qubit, and a ``CX`` on a uniformly random ordered pair of distinct
+    qubits. This is the construction of arXiv:2407.06583, App. D.
 
-    Raises:
-        TypeError: if ``rng`` is not a ``numpy.random.Generator``.
-        ValueError: if ``n < 1`` or ``size < 0``.
+    Parameters
+    ----------
+    n : int
+        Number of qubits. Must be at least 1.
+    size : int
+        Number of gates. Must be non-negative.
+    rng : numpy.random.Generator
+        Source of randomness.
+
+    Returns
+    -------
+    stim.Circuit
+        The gates in order. Qubits no gate touches are left implicit, so
+        ``num_qubits`` may be less than ``n``.
+
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``n < 1`` or ``size < 0``.
+
+    Notes
+    -----
+    The same generator state gives the same circuit within one NumPy
+    version; NumPy does not promise identical streams across versions.
     """
     if not isinstance(rng, np.random.Generator):
-        raise TypeError("rng must be a numpy.random.Generator")
+        raise TypeError(
+            f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
+        )
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if size < 0:
@@ -64,16 +90,32 @@ def random_gate_sequence(
 
 
 def random_clifford(n: int) -> stim.Circuit:
-    """Synthesise a uniformly random ``n``-qubit Clifford over ``{H, S, CX}``.
+    """Return a uniformly random ``n``-qubit Clifford over ``{H, S, CX}``.
 
-    Sampling is Stim's, which implements Bravyi-Maslov and takes no seed, and
-    Stim's synthesis is documented as unstable across versions and possibly
-    randomized, so repeated calls differ and a fixed tableau would not help.
-    Commit a generated set with :func:`save_circuits` for anything that must
-    be reproducible.
+    The Clifford is sampled by Stim's implementation of Bravyi and Maslov's
+    algorithm, as in arXiv:2407.06583, Sec. V, and synthesised by Gaussian
+    elimination into ``O(n^2)`` gates.
 
-    Raises:
-        ValueError: if ``n < 1``.
+    Parameters
+    ----------
+    n : int
+        Number of qubits. Must be at least 1.
+
+    Returns
+    -------
+    stim.Circuit
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
+
+    Notes
+    -----
+    Not reproducible: Stim's sampler takes no seed, and Stim documents its
+    synthesis as unstable across versions and possibly randomized. Keep a
+    generated set with :func:`save_circuits` for anything that must be
+    rerun.
     """
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
@@ -83,8 +125,21 @@ def random_clifford(n: int) -> stim.Circuit:
 def random_cliffords(n: int, count: int) -> list[stim.Circuit]:
     """Return ``count`` independent :func:`random_clifford` circuits.
 
-    Raises:
-        ValueError: if ``count < 1``, or as :func:`random_clifford`.
+    Parameters
+    ----------
+    n : int
+        Number of qubits. Must be at least 1.
+    count : int
+        Number of circuits. Must be at least 1.
+
+    Returns
+    -------
+    list of stim.Circuit
+
+    Raises
+    ------
+    ValueError
+        If ``count < 1``.
     """
     if count < 1:
         raise ValueError(f"count must be positive, got {count}")
@@ -92,16 +147,39 @@ def random_cliffords(n: int, count: int) -> list[stim.Circuit]:
 
 
 def save_circuits(circuits: list[stim.Circuit], path: str | Path) -> None:
-    """Write ``circuits`` to ``path`` as a JSON list of Stim circuit texts.
+    """Write ``circuits`` to ``path``, replacing any existing file.
 
-    Raises:
-        ValueError: if ``circuits`` is empty.
+    The file is a JSON list of Stim circuit texts, in order, encoded as
+    UTF-8.
+
+    Parameters
+    ----------
+    circuits : list of stim.Circuit
+        Must not be empty.
+    path : str or pathlib.Path
+
+    Raises
+    ------
+    ValueError
+        If ``circuits`` is empty.
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
-    Path(path).write_text(json.dumps([str(c) for c in circuits], indent=1))
+    text = json.dumps([str(c) for c in circuits], indent=1)
+    Path(path).write_text(text, encoding="utf-8")
 
 
 def load_circuits(path: str | Path) -> list[stim.Circuit]:
-    """Read circuits written by :func:`save_circuits`."""
-    return [stim.Circuit(text) for text in json.loads(Path(path).read_text())]
+    """Return the circuits written to ``path`` by :func:`save_circuits`.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+
+    Returns
+    -------
+    list of stim.Circuit
+        In the order they were saved.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    return [stim.Circuit(circuit) for circuit in json.loads(text)]
