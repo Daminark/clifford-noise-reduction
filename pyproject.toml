@@ -47,7 +47,7 @@ markers = [
 
 [tool.coverage.run]
 source_pkgs = ["clinr"]
-branch = true
+branch = true                  # count untaken branches, not only lines
 
 [tool.coverage.report]
 show_missing = true
@@ -94,9 +94,11 @@ ignore = [
 ]
 
 [tool.ruff]
-line-length = 79
+line-length = 79               # PEP 8's limit, not ruff's default of 88
 
 [tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, pytest style,
+# docstrings, NumPy and ruff's own rules.
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "PT", "D", "NPY", "RUF"]
 # __all__ mirrors each module's definition order, which is itself ordered
 # by dependency; alphabetising it would lose that.
