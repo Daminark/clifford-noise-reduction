@@ -251,7 +251,7 @@ def plog_bound(
     _check_sizes(n, r)
     family = _check_family(n, r, restricted_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
-    counts = [accounting.gate_counts(c) for c in chunks]
+    counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _plog_from_counts(
         counts, noise, n, family, noisy_checks, noisy_q, native_plus
     )
@@ -299,7 +299,7 @@ def overhead_bound(
     _check_sizes(n, r)
     family = _check_family(n, r, restricted_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
-    counts = [accounting.gate_counts(c) for c in chunks]
+    counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _overhead_from_counts(
         counts, noise, n, family, noisy_checks, noisy_q, native_plus
     )
@@ -373,7 +373,7 @@ def choose_tr(
     best_plog = math.inf
     for t in range(1, upper_t + 1):
         chunks = protocol.chunk_circuit(circuit, n, t)
-        counts = [accounting.gate_counts(c) for c in chunks]
+        counts = [accounting.gate_counts(chunk) for chunk in chunks]
         for r, family in enumerate(families):
             options = (noise, n, family, noisy_checks, noisy_q, native_plus)
             if _overhead_from_counts(counts, *options) > max_overhead:

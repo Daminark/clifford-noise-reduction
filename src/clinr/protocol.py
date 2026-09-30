@@ -292,7 +292,7 @@ def stabilizer_gens(
     indices = [*bare, *image]
     if len(set(indices)) != 2 * n:
         raise ValueError(f"bare and image repeat an index: {indices}")
-    if not all(0 <= q < total for q in indices):
+    if not all(0 <= index < total for index in indices):
         raise ValueError(f"indices must lie in [0, {total}), got {indices}")
 
     gens: list[stim.PauliString] = []
@@ -330,11 +330,11 @@ def _measure_stabilizer_noisy(
     assert pauli[anc] == 0, f"ancilla {anc} in the support of {pauli}"
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
     _prep_plus_noisy(circ, [anc], noise, native_plus=native_plus)
-    for j in range(len(pauli)):
-        code = pauli[j]
+    for qubit in range(len(pauli)):
+        code = pauli[qubit]
         if code == 0:
             continue
-        _apply_noisy(circ, controlled[code], [anc, j], noise)
+        _apply_noisy(circ, controlled[code], [anc, qubit], noise)
     _apply_noisy(circ, "H", [anc], noise)
     _measure_noisy(circ, [anc], noise)
 
@@ -453,7 +453,7 @@ def build_direct(
         out.append("CX", [ref[i], b1[i]])
 
     for name, targets in gate_list(circuit):
-        _apply_noisy(out, name, [b1[q] for q in targets], noise)
+        _apply_noisy(out, name, [b1[qubit] for qubit in targets], noise)
 
     for observable, gen in enumerate(
         stabilizer_gens(full_tableau, ref, b1, total)
@@ -555,7 +555,7 @@ def build_clinr_tr(
                 )
             if check.weight == 0:
                 raise ValueError(f"chunk {k}: check is the identity")
-            if not all(check.commutes(g) for g in gens):
+            if not all(check.commutes(gen) for gen in gens):
                 raise ValueError(
                     f"chunk {k}: check {check} does not stabilize the resource"
                 )
@@ -566,7 +566,7 @@ def build_clinr_tr(
             _prep_noisy(out, [b3[i]], noise)
             _apply_noisy(out, "CX", [b2[i], b3[i]], noise)
         for name, targets in gate_list(chunk):
-            _apply_noisy(out, name, [b3[q] for q in targets], noise)
+            _apply_noisy(out, name, [b3[qubit] for qubit in targets], noise)
 
         # Offline checks on this chunk's resource.
         for logical in chunk_checks:
@@ -609,7 +609,7 @@ def build_clinr_tr(
     ):
         out.append("MPP", _pauli_to_mpp_targets(gen))
         # The generator's output-block part, in logical indexing.
-        conj = stim.PauliString([gen[q] for q in data_in])
+        conj = stim.PauliString([gen[qubit] for qubit in data_in])
         records = [stim.target_rec(-1)]
         for index, pauli in frame.items():
             if not pauli.commutes(conj):

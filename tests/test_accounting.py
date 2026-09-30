@@ -89,7 +89,10 @@ def check_regions(
     """Return each chunk's check region, charged at the drawn weights."""
     return [
         accounting.check_region(
-            len(chunk), sum(p.weight for p in chunk), noisy_checks, native_plus
+            len(chunk),
+            sum(check.weight for check in chunk),
+            noisy_checks,
+            native_plus,
         )
         for chunk in drawn
     ]

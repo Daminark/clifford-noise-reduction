@@ -101,10 +101,10 @@ def wilson_interval(
     _check_confidence(confidence)
     if trials == 0:
         return math.nan, 0.0, 1.0
-    ci = stats.binomtest(errors, trials).proportion_ci(
+    interval = stats.binomtest(errors, trials).proportion_ci(
         confidence, method="wilson"
     )
-    return errors / trials, float(ci.low), float(ci.high)
+    return errors / trials, float(interval.low), float(interval.high)
 
 
 @dataclass(frozen=True)
@@ -184,9 +184,12 @@ class Estimate:
             ("chunk_accepted", self.chunk_accepted),
             ("chunk_checks", self.chunk_checks),
             ("chunk_weight", self.chunk_weight),
-            ("chunk_counts", tuple(c for p in self.chunk_counts for c in p)),
+            (
+                "chunk_counts",
+                tuple(count for pair in self.chunk_counts for count in pair),
+            ),
         ):
-            if any(v < 0 for v in values):
+            if any(value < 0 for value in values):
                 raise ValueError(f"{name} must be non-negative, got {values}")
         if self.accepted > self.shots:
             raise ValueError(
@@ -198,12 +201,12 @@ class Estimate:
                 f"errors ({self.errors}) cannot exceed accepted "
                 f"({self.accepted})"
             )
-        if any(a > self.shots for a in self.chunk_accepted):
+        if any(chunk > self.shots for chunk in self.chunk_accepted):
             raise ValueError(
                 f"no chunk can accept more than the {self.shots} shots, got "
                 f"{self.chunk_accepted}"
             )
-        if any(a < self.accepted for a in self.chunk_accepted):
+        if any(chunk < self.accepted for chunk in self.chunk_accepted):
             raise ValueError(
                 "every chunk accepts at least the "
                 f"{self.accepted} shots accepted overall, got "
@@ -211,8 +214,10 @@ class Estimate:
             )
         worst = self.n + 1 if self.restricted_checks else 2 * self.n
         if any(
-            not c <= w <= c * worst
-            for w, c in zip(self.chunk_weight, self.chunk_checks, strict=False)
+            not checks <= weight <= checks * worst
+            for weight, checks in zip(
+                self.chunk_weight, self.chunk_checks, strict=False
+            )
         ):
             raise ValueError(
                 "each chunk's check weight must lie between its number of "
@@ -357,12 +362,12 @@ def estimate_clinr(
         noisy_q=noisy_q,
         native_plus=native_plus,
     )
-    per_chunk_checks = [len(c) for c in drawn]
+    per_chunk_checks = [len(chunk_checks) for chunk_checks in drawn]
     accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
     s1, s2 = accounting.gate_counts(circuit)
     chunk_counts = tuple(
-        accounting.gate_counts(c)
-        for c in protocol.chunk_circuit(circuit, n, len(drawn))
+        accounting.gate_counts(chunk)
+        for chunk in protocol.chunk_circuit(circuit, n, len(drawn))
     )
     return Estimate(
         shots,
@@ -373,7 +378,7 @@ def estimate_clinr(
         n,
         per_chunk,
         tuple(per_chunk_checks),
-        tuple(sum(p.weight for p in c) for c in drawn),
+        tuple(sum(check.weight for check in chunk) for chunk in drawn),
         chunk_counts,
         noisy_checks=noisy_checks,
         restricted_checks=restricted_checks,
@@ -454,7 +459,7 @@ def sweep_clinr(
         raise ValueError("circuits must not be empty")
     return [
         estimate_clinr(
-            c,
+            circuit,
             n,
             t,
             r,
@@ -466,7 +471,7 @@ def sweep_clinr(
             noisy_q=noisy_q,
             native_plus=native_plus,
         )
-        for c in circuits
+        for circuit in circuits
     ]
 
 
@@ -490,7 +495,9 @@ def sweep_direct(
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
-    return [estimate_direct(c, n, noise, shots, rng) for c in circuits]
+    return [
+        estimate_direct(circuit, n, noise, shots, rng) for circuit in circuits
+    ]
 
 
 def _setting(estimate: Estimate) -> dict[str, int | bool]:
@@ -566,14 +573,20 @@ def cluster_interval(
     """
     _comparable(estimates)
     _check_confidence(confidence)
-    rates = [e.p_log for e in estimates]
+    rates = [estimate.p_log for estimate in estimates]
     point = sum(rates) / len(rates)
     if len(rates) < 2:
         return point, math.nan, math.nan
     df = len(rates) - 1
-    spread = math.sqrt(sum((r - point) ** 2 for r in rates) / df / len(rates))
-    t = float(stats.t.ppf((1.0 + confidence) / 2.0, df))
-    return point, max(0.0, point - t * spread), min(1.0, point + t * spread)
+    spread = math.sqrt(
+        sum((rate - point) ** 2 for rate in rates) / df / len(rates)
+    )
+    quantile = float(stats.t.ppf((1.0 + confidence) / 2.0, df))
+    return (
+        point,
+        max(0.0, point - quantile * spread),
+        min(1.0, point + quantile * spread),
+    )
 
 
 def design_effect(estimates: list[Estimate]) -> float:
@@ -609,12 +622,12 @@ def design_effect(estimates: list[Estimate]) -> float:
     _comparable(estimates)
     if len(estimates) < 2:
         raise ValueError("design effect needs at least two estimates")
-    rates = [e.p_log for e in estimates]
+    rates = [estimate.p_log for estimate in estimates]
     mean = sum(rates) / len(rates)
-    between = sum((r - mean) ** 2 for r in rates) / (len(rates) - 1)
+    between = sum((rate - mean) ** 2 for rate in rates) / (len(rates) - 1)
     within = sum(
-        r * (1.0 - r) / e.accepted
-        for r, e in zip(rates, estimates, strict=True)
+        rate * (1.0 - rate) / estimate.accepted
+        for rate, estimate in zip(rates, estimates, strict=True)
     ) / len(estimates)
     if within == 0.0:
         raise ValueError(
@@ -651,7 +664,7 @@ def gate_overhead(estimate: Estimate) -> float:
     """
     if not estimate.chunk_accepted:
         raise ValueError("estimate has no chunks")
-    if any(a == 0 for a in estimate.chunk_accepted):
+    if any(accepted == 0 for accepted in estimate.chunk_accepted):
         raise ValueError(
             "a chunk accepted no shots, so its restart probability is "
             "unmeasurable"
@@ -670,7 +683,7 @@ def gate_overhead(estimate: Estimate) -> float:
         estimate.n,
         accounting.prep_region(estimate.n, estimate.native_plus),
         regions,
-        [a / estimate.shots for a in estimate.chunk_accepted],
+        [accepted / estimate.shots for accepted in estimate.chunk_accepted],
         estimate.noisy_q,
     )
 
@@ -698,5 +711,5 @@ def mean_gate_overhead(estimates: list[Estimate]) -> float:
         On the conditions of :func:`cluster_interval` on ``estimates``.
     """
     _comparable(estimates)
-    overheads = [gate_overhead(e) for e in estimates]
+    overheads = [gate_overhead(estimate) for estimate in estimates]
     return sum(overheads) / len(overheads)

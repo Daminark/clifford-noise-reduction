@@ -156,9 +156,9 @@ def test_chunks_partition_the_gates_into_balanced_contiguous_pieces(
 
     sizes = [len(protocol.gate_list(chunk)) for chunk in chunks]
     assert len(chunks) == t
-    assert [g for chunk in chunks for g in protocol.gate_list(chunk)] == (
-        protocol.gate_list(circuit)
-    )
+    assert [
+        gate for chunk in chunks for gate in protocol.gate_list(chunk)
+    ] == (protocol.gate_list(circuit))
     assert sum(sizes) == size
     assert sizes == sorted(sizes, reverse=True)
     assert max(sizes) - min(sizes) <= 1
@@ -204,13 +204,13 @@ def test_stabilizer_gens_generate_the_stabilizer_group_of_the_resource(
         resource.append("H", [bare[i]])
         resource.append("CX", [bare[i], image[i]])
     for name, targets in protocol.gate_list(circuit):
-        resource.append(name, [image[q] for q in targets])
+        resource.append(name, [image[qubit] for qubit in targets])
     simulator = stim.TableauSimulator()
     simulator.do(resource)
 
     assert len(gens) == 2 * n
     assert all(
-        abs(simulator.peek_observable_expectation(g)) == 1 for g in gens
+        abs(simulator.peek_observable_expectation(gen)) == 1 for gen in gens
     )
     # Raises unless the 2n generators commute and are independent.
     stim.Tableau.from_stabilizers(gens)

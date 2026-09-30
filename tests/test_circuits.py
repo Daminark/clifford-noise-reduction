@@ -23,7 +23,7 @@ def test_random_gate_sequence_draws_size_gates_from_h_s_and_cx(n, size, seed):
     alphabet = {"H", "S"} if n == 1 else {"H", "S", "CX"}
     assert {name for name, _ in gates} <= alphabet
     for _, targets in gates:
-        assert all(0 <= q < n for q in targets)
+        assert all(0 <= qubit < n for qubit in targets)
         assert len(set(targets)) == len(targets)
 
 

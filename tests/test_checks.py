@@ -71,9 +71,9 @@ def test_restricted_family_is_the_propagated_bell_triples(n, size, seed):
 
     assert len(family) == 3 * n
     for element in family:
-        assert sum(element[q] != 0 for q in range(n)) == 1
-        assert sum(element[q] != 0 for q in range(n, 2 * n)) <= n
-        assert all(element.commutes(g) for g in gens)
+        assert sum(element[qubit] != 0 for qubit in range(n)) == 1
+        assert sum(element[qubit] != 0 for qubit in range(n, 2 * n)) <= n
+        assert all(element.commutes(gen) for gen in gens)
     for gx, gz, third in itertools.batched(family, 3, strict=True):
         assert unsigned(third) == unsigned(gx * gz)
 
@@ -91,10 +91,14 @@ def test_worst_case_per_draw_miss_is_the_constant_the_bounds_use(n):
     worst_restricted = 0.0
     for letters in itertools.product("IXYZ", repeat=2 * n):
         fault = stim.PauliString("".join(letters))
-        if all(fault.commutes(g) for g in gens):
+        if all(fault.commutes(gen) for gen in gens):
             continue  # a stabilizer, up to sign: it does no damage
-        uniform = sum(fault.commutes(s) for s in group) / len(group)
-        restricted = sum(fault.commutes(s) for s in family) / len(family)
+        uniform = sum(fault.commutes(element) for element in group) / len(
+            group
+        )
+        restricted = sum(fault.commutes(element) for element in family) / len(
+            family
+        )
         # Half the group anticommutes, and the identity is never drawn.
         assert uniform == pytest.approx(uniform_miss)
         worst_restricted = max(worst_restricted, restricted)
@@ -132,12 +136,12 @@ def test_draw_checks_draws_stabilizers_of_each_chunks_resource(
         protocol.chunk_circuit(circuit, n, t), drawn, strict=True
     ):
         _, gens, family = resource(chunk, n)
-        allowed = {unsigned(p) for p in family}
+        allowed = {unsigned(element) for element in family}
         assert len(chunk_checks) == r
         for check in chunk_checks:
             assert len(check) == 2 * n
             assert check.weight > 0
-            assert all(check.commutes(g) for g in gens)
+            assert all(check.commutes(gen) for gen in gens)
             if restricted_checks:
                 assert unsigned(check) in allowed
 
@@ -157,7 +161,7 @@ def test_uniform_checks_are_uniform_over_the_non_identity_elements(n):
         circuit, n, 1, draws, np.random.default_rng(0)
     )
 
-    tally = {unsigned(g): 0 for g in group_elements(gens)}
+    tally = {unsigned(element): 0 for element in group_elements(gens)}
     for check in drawn:
         tally[unsigned(check)] += 1
     assert stats.chisquare(list(tally.values())).pvalue > 1e-6

@@ -242,7 +242,7 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
         )
         for _ in range(draws)
     ]
-    rates = [e.p_log for e in estimates]
+    rates = [estimate.p_log for estimate in estimates]
     mean = sum(rates) / len(rates)
     standard_error = float(np.std(rates, ddof=1)) / math.sqrt(len(rates))
 

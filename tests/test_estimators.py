@@ -180,7 +180,7 @@ def test_estimate_at_zero_noise_accepts_every_shot_without_error(
     assert estimate.size == size
     # Every check has weight between 1 and its family's worst case.
     worst = n + 1 if restricted_checks else 2 * n
-    assert all(r <= w <= r * worst for w in estimate.chunk_weight)
+    assert all(r <= weight <= r * worst for weight in estimate.chunk_weight)
 
 
 def test_each_chunk_records_its_own_acceptance_not_the_joint_one():
@@ -200,7 +200,7 @@ def test_each_chunk_records_its_own_acceptance_not_the_joint_one():
         np.random.default_rng(2),
     )
 
-    assert all(a > estimate.accepted for a in estimate.chunk_accepted)
+    assert all(chunk > estimate.accepted for chunk in estimate.chunk_accepted)
 
 
 def test_estimate_repeats_for_the_same_seed():

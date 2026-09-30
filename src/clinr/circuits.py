@@ -80,10 +80,11 @@ def random_gate_sequence(
 
     alphabet = ["H", "S"] if n == 1 else ["H", "S", "CX"]
     circuit = stim.Circuit()
-    for name in (alphabet[k] for k in rng.integers(len(alphabet), size=size)):
+    choices = rng.integers(len(alphabet), size=size)
+    for name in (alphabet[choice] for choice in choices):
         if name == "CX":
-            a, b = rng.choice(n, 2, replace=False)
-            circuit.append("CX", [int(a), int(b)])
+            control, target = rng.choice(n, 2, replace=False)
+            circuit.append("CX", [int(control), int(target)])
         else:
             circuit.append(name, [int(rng.integers(n))])
     return circuit
@@ -165,7 +166,7 @@ def save_circuits(circuits: list[stim.Circuit], path: str | Path) -> None:
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
-    text = json.dumps([str(c) for c in circuits], indent=1)
+    text = json.dumps([str(circuit) for circuit in circuits], indent=1)
     Path(path).write_text(text, encoding="utf-8")
 
 
