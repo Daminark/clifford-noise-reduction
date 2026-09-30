@@ -51,6 +51,7 @@ branch = true                  # count untaken branches, not only lines
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 99                # the current level; raise it, never lower it
 
 [tool.mypy]
 files = ["src", "tests"]
@@ -98,8 +99,10 @@ line-length = 79               # PEP 8's limit, not ruff's default of 88
 
 [tool.ruff.lint]
 # pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, pytest style,
-# docstrings, NumPy and ruff's own rules.
-select = ["E", "W", "F", "I", "B", "UP", "SIM", "PT", "D", "NPY", "RUF"]
+# docstrings, NumPy, ruff's own rules, no print in the package, and pathlib.
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "PT", "D", "NPY", "RUF", "T20", "PTH",
+]
 # __all__ mirrors each module's definition order, which is itself ordered
 # by dependency; alphabetising it would lose that.
 ignore = ["RUF022"]
