@@ -15,11 +15,11 @@ This repository implements the `t = 1` case (Lemma 1 of the paper) and uses it t
 
 ## What's here
 
-| file | role |
-|------|------|
-| `clinr.py` | Circuit construction. Builds `CliNR_{1,r}(C)` with the Choi test harness and the circuit-level noise model. Exact at `p = 0`. |
+| file            | role                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `clinr.py`      | Circuit construction. Builds `CliNR_{1,r}(C)` with the Choi test harness and the circuit-level noise model. Exact at `p = 0`.     |
 | `estimators.py` | Monte-Carlo evaluation: `p_logical` (logical error rate) and `catch_rate` (detection probability), pooled over random check sets. |
-| `demo.ipynb` | Worked example and the two core figures. Start here. |
+| `demo.ipynb`    | Worked example and the two core figures. Start here.                                                                              |
 
 ## Quickstart
 
