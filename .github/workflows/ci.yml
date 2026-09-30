@@ -46,4 +46,4 @@ jobs:
         if: github.event_name != 'push'
         env:
           HYPOTHESIS_PROFILE: ci
-        run: uv run --locked pytest --runslow
+        run: uv run --locked pytest --runslow --cov --cov-report=term-missing
