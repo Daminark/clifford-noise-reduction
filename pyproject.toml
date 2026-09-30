@@ -33,7 +33,7 @@ packages = ["src/clinr"]
 [tool.pytest]
 minversion = "9.0"             # the native table and strict need pytest 9
 addopts = [
-    "-ra",                     # summarise every outcome but passes
+    "-ra",                     # summarize every outcome but passes
     "--showlocals",            # print local variables in tracebacks
     "--import-mode=importlib", # test the installed package, not src/
 ]
@@ -108,7 +108,7 @@ select = [
 ignore = ["RUF022"]
 
 [tool.ruff.lint.per-file-ignores]
-# A test's name states the behaviour it checks, so tests, test modules and the
+# A test's name states the behavior it checks, so tests, test modules and the
 # tests package need no docstring; the docstrings that are written are checked.
 "tests/**" = ["D100", "D103", "D104"]
 

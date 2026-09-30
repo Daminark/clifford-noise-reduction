@@ -3,7 +3,7 @@
 :func:`random_gate_sequence` draws gates uniformly from ``{H, S, CX}``, the
 construction of [1]_, App. D, and is reproducible from a NumPy generator.
 :func:`random_clifford` samples a uniformly random Clifford [2]_ and
-synthesises it over ``{H, S, CX}``, the construction of [1]_, Sec. V; Stim's
+synthesizes it over ``{H, S, CX}``, the construction of [1]_, Sec. V; Stim's
 sampler takes no seed, so these circuits are not reproducible, and
 :func:`save_circuits` and :func:`load_circuits` keep a generated set.
 
@@ -94,7 +94,7 @@ def random_clifford(n: int) -> stim.Circuit:
     """Return a uniformly random ``n``-qubit Clifford over ``{H, S, CX}``.
 
     The Clifford is sampled by Stim's implementation of Bravyi and Maslov's
-    algorithm, as in arXiv:2407.06583, Sec. V, and synthesised by Gaussian
+    algorithm, as in arXiv:2407.06583, Sec. V, and synthesized by Gaussian
     elimination into ``O(n^2)`` gates.
 
     Parameters

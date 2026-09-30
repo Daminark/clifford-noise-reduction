@@ -20,7 +20,7 @@ Register layout, ``4n + 1`` qubits::
     ref [3n, 4n)     Choi reference, noiseless apparatus
     anc 4n           ancilla for the check gadget
 
-After each chunk, ``b1`` and ``b3`` exchange roles by relabelling, with no
+After each chunk, ``b1`` and ``b3`` exchange roles by relabeling, with no
 gates, so the output ends on ``b3`` when ``t`` is odd and on ``b1`` when
 ``t`` is even.
 
@@ -30,7 +30,7 @@ gates, a flipped outcome at ``p_m`` for each measurement, and at ``p_prep``
 an ``X_ERROR`` after ``R`` or a ``Z_ERROR`` after ``RX``. Idle qubits and the
 Choi harness are noiseless.
 
-Three modelling choices depart from [1]_, Sec. II, and the analytic bounds
+Three modeling choices depart from [1]_, Sec. II, and the analytic bounds
 count them as such:
 
 1. By default ``|+>`` is a reset followed by a Hadamard, two fault

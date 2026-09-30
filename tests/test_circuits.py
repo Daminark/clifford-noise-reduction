@@ -55,7 +55,7 @@ def test_random_gate_sequence_rejects_a_legacy_random_state():
 
 
 @pytest.mark.parametrize("n", [1, 2, 5])
-def test_random_clifford_synthesises_over_h_s_and_cx(n):
+def test_random_clifford_synthesizes_over_h_s_and_cx(n):
     circuit = circuits.random_clifford(n)
 
     assert circuit.num_qubits <= n
