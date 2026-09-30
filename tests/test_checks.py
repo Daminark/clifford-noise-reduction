@@ -59,69 +59,6 @@ def bare_z(n: int) -> stim.PauliString:
 
 
 # ---------------------------------------------------------------------------
-# random_stabilizer
-# ---------------------------------------------------------------------------
-@given(
-    n=st.integers(1, 3),
-    size=st.integers(0, 30),
-    seed=st.integers(0, 2**32 - 1),
-)
-def test_random_stabilizer_returns_a_non_identity_stabilizer(n, size, seed):
-    _, gens, _ = resource(seeded_circuit(n, size, seed), n)
-
-    drawn = checks.random_stabilizer(gens, np.random.default_rng(seed))
-
-    assert len(drawn) == 2 * n
-    assert drawn.weight > 0
-    # The group is maximal, so commuting with every generator is membership.
-    assert all(drawn.commutes(g) for g in gens)
-
-
-@pytest.mark.parametrize("n", [1, 2])
-def test_random_stabilizer_is_uniform_over_the_non_identity_elements(n):
-    """Chi-square test at p > 1e-6, about a five-sigma departure.
-
-    With 1000 expected draws per element, an element never drawn, or drawn
-    at twice its share, gives a p-value far below the threshold.
-    """
-    _, gens, _ = resource(seeded_circuit(n, 20, seed=n), n)
-    rng = np.random.default_rng(0)
-    draws = 1000 * (4**n - 1)
-
-    tally = {unsigned(g): 0 for g in group_elements(gens)}
-    for _ in range(draws):
-        tally[unsigned(checks.random_stabilizer(gens, rng))] += 1
-
-    assert stats.chisquare(list(tally.values())).pvalue > 1e-6
-
-
-def test_random_stabilizer_rejects_a_legacy_random_state():
-    _, gens, _ = resource(seeded_circuit(1, 5, seed=0), 1)
-
-    with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
-        checks.random_stabilizer(gens, np.random.RandomState(0))
-
-
-def test_random_stabilizer_rejects_an_empty_generating_set():
-    with pytest.raises(ValueError, match="must not be empty"):
-        checks.random_stabilizer([], np.random.default_rng(0))
-
-
-def test_random_stabilizer_rejects_generators_of_different_lengths():
-    gens = [stim.PauliString("XX"), stim.PauliString("ZZZ")]
-
-    with pytest.raises(ValueError, match="share one length"):
-        checks.random_stabilizer(gens, np.random.default_rng(0))
-
-
-def test_random_stabilizer_rejects_generators_of_only_the_identity():
-    gens = [stim.PauliString("__"), stim.PauliString("__")]
-
-    with pytest.raises(ValueError, match="only the identity"):
-        checks.random_stabilizer(gens, np.random.default_rng(0))
-
-
-# ---------------------------------------------------------------------------
 # restricted_family
 # ---------------------------------------------------------------------------
 @given(
@@ -199,6 +136,27 @@ def test_draw_checks_draws_stabilizers_of_each_chunks_resource(
             assert all(check.commutes(g) for g in gens)
             if restricted_checks:
                 assert unsigned(check) in allowed
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_uniform_checks_are_uniform_over_the_non_identity_elements(n):
+    """Chi-square test at p > 1e-6, about a five-sigma departure.
+
+    With 1000 expected draws per element, an element never drawn, or drawn
+    at twice its share, gives a p-value far below the threshold.
+    """
+    circuit = seeded_circuit(n, 20, seed=n)
+    _, gens, _ = resource(circuit, n)
+    draws = 1000 * (4**n - 1)
+
+    (drawn,) = checks.draw_checks(
+        circuit, n, 1, draws, np.random.default_rng(0)
+    )
+
+    tally = {unsigned(g): 0 for g in group_elements(gens)}
+    for check in drawn:
+        tally[unsigned(check)] += 1
+    assert stats.chisquare(list(tally.values())).pvalue > 1e-6
 
 
 def test_draw_checks_repeats_its_draws_for_the_same_seed():

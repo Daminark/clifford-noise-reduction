@@ -22,70 +22,9 @@ import stim
 from . import protocol
 
 __all__ = [
-    "random_stabilizer",
     "restricted_family",
     "draw_checks",
 ]
-
-
-def _check_rng(rng: np.random.Generator) -> None:
-    """Raise ``TypeError`` unless ``rng`` is a ``numpy.random.Generator``."""
-    if not isinstance(rng, np.random.Generator):
-        raise TypeError(
-            f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Check families
-# ---------------------------------------------------------------------------
-def random_stabilizer(
-    gens: list[stim.PauliString], rng: np.random.Generator
-) -> stim.PauliString:
-    """Return a uniformly random non-identity element of the group of ``gens``.
-
-    Each generator is included in the product with probability 1/2, which is
-    uniform over the group, and the identity is redrawn.
-
-    Parameters
-    ----------
-    gens : list of stim.PauliString
-        Pairwise commuting generators of one length, not all the identity,
-        such as those of :func:`clinr.protocol.stabilizer_gens`.
-    rng : numpy.random.Generator
-        Source of randomness.
-
-    Returns
-    -------
-    stim.PauliString
-        Of the length of ``gens``, with a sign that nothing downstream reads.
-
-    Raises
-    ------
-    TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
-    ValueError
-        If ``gens`` is empty, if its elements differ in length, or if every
-        element is the identity.
-    """
-    _check_rng(rng)
-    if not gens:
-        raise ValueError("gens must not be empty")
-    total = len(gens[0])
-    if any(len(gen) != total for gen in gens):
-        raise ValueError(
-            f"gens must share one length, got {sorted({len(g) for g in gens})}"
-        )
-    if all(gen.weight == 0 for gen in gens):
-        raise ValueError("gens generate only the identity")
-    while True:
-        take = rng.random(len(gens)) < 0.5
-        product = stim.PauliString(total)
-        for keep, gen in zip(take, gens, strict=True):
-            if keep:
-                product *= gen
-        if product.weight > 0:
-            return product
 
 
 def restricted_family(
@@ -149,9 +88,12 @@ def draw_checks(
     rng : numpy.random.Generator
         Source of randomness, drawn from in chunk order.
     restricted_checks : bool, optional
-        If True, draw uniformly from :func:`restricted_family`; if False,
-        from the non-identity elements of the full stabilizer group, with
-        :func:`random_stabilizer`.
+        If True, draw uniformly from :func:`restricted_family`. If False,
+        draw uniformly from the non-identity elements of the full
+        stabilizer group: each generator of
+        :func:`clinr.protocol.stabilizer_gens` enters the product with
+        probability 1/2, which is uniform over the group, and the identity
+        is redrawn.
 
     Returns
     -------
@@ -168,7 +110,10 @@ def draw_checks(
     ValueError
         If ``r`` is negative.
     """
-    _check_rng(rng)
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError(
+            f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
+        )
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     bare, image = list(range(n)), list(range(n, 2 * n))
@@ -176,11 +121,21 @@ def draw_checks(
     for chunk in protocol.chunk_circuit(circuit, n, t):
         tableau = chunk.to_tableau()
         if restricted_checks:
-            pool = restricted_family(tableau, bare, image, 2 * n)
+            family = restricted_family(tableau, bare, image, 2 * n)
             checks.append(
-                [pool[int(rng.integers(len(pool)))] for _ in range(r)]
+                [family[int(rng.integers(len(family)))] for _ in range(r)]
             )
-        else:
-            gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
-            checks.append([random_stabilizer(gens, rng) for _ in range(r)])
+            continue
+        gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
+        chunk_checks: list[stim.PauliString] = []
+        while len(chunk_checks) < r:
+            product = stim.PauliString(2 * n)
+            for keep, gen in zip(
+                rng.random(len(gens)) < 0.5, gens, strict=True
+            ):
+                if keep:
+                    product *= gen
+            if product.weight > 0:
+                chunk_checks.append(product)
+        checks.append(chunk_checks)
     return checks
