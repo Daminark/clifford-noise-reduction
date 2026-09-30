@@ -1,19 +1,26 @@
-"""Monte Carlo estimators for CliNR (arXiv:2407.06583).
+"""Monte Carlo estimates of CliNR and of the direct implementation.
 
-Estimators return raw counts rather than scalars. A count record is a
-sufficient statistic: the point estimate, its confidence interval, and any
-reduction over a sweep of circuits can be reconstructed from it, so a sweep
-never has to be repeated to compute a different statistic.
+:func:`estimate_clinr` and :func:`estimate_direct` sample the circuits
+:mod:`clinr.protocol` builds and return an :class:`Estimate` of raw counts,
+from which the point estimates, their intervals and the measured gate
+overhead are all computed, so a sweep never has to be rerun for another
+statistic.
 
-Every reported proportion carries a Wilson score interval. The Wald interval
-is unusable here: the logical error rate sits near zero, where Wald's lower
-bound leaves ``[0, 1]`` and collapses to a point when no errors are seen.
+A CliNR shot is accepted when every check of every chunk passes, and the
+logical error rate is taken over accepted shots. This conditioning gives the
+output distribution of the protocol, which re-prepares a rejected resource
+offline and never lets a failed attempt touch the data; the cost of
+re-preparation appears in :func:`gate_overhead` instead.
 
-Acceptance is modelled by post-selection. In the protocol a chunk whose
-resource fails its checks is re-prepared offline, so the resource consumed is
-always one that passed, and the data is never touched by a failed attempt.
-Conditioning on all checks passing therefore reproduces the protocol's state,
-and the cost of re-preparation appears in the gate overhead instead.
+One estimate is one draw of the checks, and its shots share those checks.
+:func:`cluster_interval`, :func:`design_effect` and
+:func:`mean_gate_overhead` treat draws, not shots, as the unit of
+observation.
+
+References
+----------
+.. [1] N. Delfosse and E. Tham, "Low-cost noise reduction for Clifford
+   circuits", arXiv:2407.06583 (2024).
 """
 
 from __future__ import annotations
@@ -41,11 +48,20 @@ __all__ = [
     "mean_gate_overhead",
 ]
 
+
 def _check_confidence(confidence: float) -> None:
-    """Reject a confidence level outside the open interval ``(0, 1)``."""
+    """Raise ``ValueError`` unless ``0 < confidence < 1``."""
     if not 0.0 < confidence < 1.0:
         raise ValueError(
             f"confidence must lie strictly between 0 and 1, got {confidence}"
+        )
+
+
+def _check_rng(rng: np.random.Generator) -> None:
+    """Raise ``TypeError`` unless ``rng`` is a ``numpy.random.Generator``."""
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError(
+            f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
         )
 
 
@@ -54,24 +70,27 @@ def wilson_interval(
 ) -> tuple[float, float, float]:
     """Return ``(point, lo, hi)``, a Wilson score interval for a proportion.
 
-    Computed by :func:`scipy.stats.binomtest`. Its argument checks do not
-    cover the zero-trials case, which returns before SciPy is called, so the
-    preconditions are checked here.
+    Parameters
+    ----------
+    errors : int
+        Number of successes. Must be between 0 and ``trials``.
+    trials : int
+        Number of independent trials. Must be non-negative.
+    confidence : float, optional
+        Confidence level, strictly between 0 and 1.
 
-    Args:
-        errors: Number of successes observed.
-        trials: Number of independent trials.
-        confidence: Confidence level, strictly between 0 and 1.
+    Returns
+    -------
+    tuple of (float, float, float)
+        The point estimate ``errors / trials`` and the interval's bounds,
+        which lie in [0, 1]. With no trials the point estimate is ``nan``
+        and the interval is ``(0, 1)``.
 
-    Returns:
-        The point estimate ``errors / trials`` and the interval bounds, which
-        lie in ``[0, 1]``. With no trials the point estimate is ``nan`` and
-        the interval is ``(0, 1)``.
-
-    Raises:
-        ValueError: if ``trials`` or ``errors`` is negative, if ``errors``
-            exceeds ``trials``, or if ``confidence`` is not strictly between
-            0 and 1.
+    Raises
+    ------
+    ValueError
+        If ``trials`` or ``errors`` is negative, if ``errors`` exceeds
+        ``trials``, or if ``confidence`` is not strictly between 0 and 1.
     """
     if trials < 0:
         raise ValueError(f"trials must be non-negative, got {trials}")
@@ -90,31 +109,38 @@ def wilson_interval(
 
 @dataclass(frozen=True)
 class Estimate:
-    """Counts from one Monte Carlo run on a single circuit.
+    """Counts from one Monte Carlo run on one circuit.
 
-    Attributes:
-        shots: Number of shots sampled.
-        accepted: Shots in which every check returned a trivial outcome.
-        errors: Accepted shots carrying a non-trivial output error.
-        s1: Single-qubit gate count of the circuit.
-        s2: Two-qubit gate count of the circuit.
-        chunk_accepted: Shots accepted by each chunk's checks alone, in chunk
-            order. A chunk with no checks accepts every shot.
-        chunk_checks: Number of checks measured in each chunk, in chunk order.
-        chunk_weight: Total weight of those checks, in chunk order.
-        chunk_counts: Gate counts ``(s1, s2)`` of each chunk, in chunk order.
+    Parameters
+    ----------
+    shots : int
+        Shots sampled. Must be positive.
+    accepted : int
+        Shots in which every check passed, at most ``shots``.
+    errors : int
+        Accepted shots with a nontrivial output error, at most
+        ``accepted``.
+    s1, s2 : int
+        Single- and two-qubit gate counts of the circuit.
+    chunk_accepted : tuple of int, optional
+        For each chunk, in order, the shots its own checks accepted:
+        between ``accepted`` and ``shots``. A chunk without checks accepts
+        every shot.
+    chunk_checks : tuple of int, optional
+        Checks measured in each chunk.
+    chunk_weight : tuple of int, optional
+        Total weight of each chunk's checks, at least its number of checks,
+        since no check is the identity.
+    chunk_counts : tuple of tuple of (int, int), optional
+        Gate counts ``(s1, s2)`` of each chunk, summing to ``(s1, s2)``.
 
-    The four per-chunk tuples have one length: the number of chunks, or zero
-    for the direct implementation, which has none. Carrying the chunk gate
-    counts is what lets :func:`gate_overhead` work from the estimate alone,
-    rather than being handed a circuit it has to trust.
+    The four per-chunk tuples have one length: the number of chunks, or
+    zero for the direct implementation. All counts are non-negative.
 
-    Raises:
-        ValueError: if ``shots`` is not positive; if any count is negative;
-            if ``accepted`` exceeds ``shots`` or ``errors`` exceeds
-            ``accepted``; if a chunk accepted more than ``shots`` or fewer
-            than ``accepted``; if the per-chunk tuples have different
-            lengths; or if the chunk gate counts do not sum to ``(s1, s2)``.
+    Raises
+    ------
+    ValueError
+        If any of the constraints above fails.
     """
 
     shots: int
@@ -128,6 +154,7 @@ class Estimate:
     chunk_counts: tuple[tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
+        """Check the constraints stated in the class docstring."""
         if self.shots < 1:
             raise ValueError(f"shots must be positive, got {self.shots}")
         for name, value in (
@@ -167,6 +194,15 @@ class Estimate:
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
             )
+        if any(
+            w < c
+            for w, c in zip(self.chunk_weight, self.chunk_checks, strict=False)
+        ):
+            raise ValueError(
+                "each chunk's check weight must be at least its number of "
+                f"checks, got weights {self.chunk_weight} for checks "
+                f"{self.chunk_checks}"
+            )
         lengths = {
             len(self.chunk_accepted),
             len(self.chunk_checks),
@@ -192,7 +228,7 @@ class Estimate:
 
     @property
     def size(self) -> int:
-        """Total gate count of the circuit."""
+        """Gate count of the circuit."""
         return self.s1 + self.s2
 
     @property
@@ -202,17 +238,11 @@ class Estimate:
 
     @property
     def p_log(self) -> float:
-        """Point estimate of the logical error rate among accepted shots."""
+        """Logical error rate among accepted shots; ``nan`` if none."""
         return math.nan if self.accepted == 0 else self.errors / self.accepted
 
-    def interval(
-        self, confidence: float = 0.95
-    ) -> tuple[float, float, float]:
-        """Return ``(point, lo, hi)`` for the logical error rate.
-
-        The accepted count is the effective sample size, so rejecting more
-        shots widens the interval.
-        """
+    def interval(self, confidence: float = 0.95) -> tuple[float, float, float]:
+        """Return :func:`wilson_interval` of ``errors`` in ``accepted``."""
         return wilson_interval(self.errors, self.accepted, confidence)
 
 
@@ -222,11 +252,14 @@ def _tally(
     rng: np.random.Generator,
     checks_per_chunk: list[int],
 ) -> tuple[int, int, tuple[int, ...]]:
-    """Sample ``circuit`` and return ``(accepted, errors, chunk_accepted)``.
+    """Sample ``circuit``; return ``(accepted, errors, chunk_accepted)``.
 
-    ``checks_per_chunk`` gives the number of detectors each chunk owns, in
-    detector order.
+    ``checks_per_chunk`` holds the number of detectors each chunk owns, in
+    detector order, and sums to the circuit's detector count.
     """
+    assert sum(checks_per_chunk) == circuit.num_detectors, (
+        f"{checks_per_chunk} checks for {circuit.num_detectors} detectors"
+    )
     seed = int(rng.integers(1 << 63))
     detectors, observables = circuit.compile_detector_sampler(
         seed=seed
@@ -260,42 +293,53 @@ def estimate_clinr(
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> Estimate:
-    """Estimate the logical error rate of ``CliNR_{t,r}`` applied to ``circuit``.
+    """Sample ``CliNR_{t,r}`` applied to ``circuit`` under fresh checks.
 
-    A fresh set of checks is drawn for the returned circuit, and the estimate
-    is conditioned on all of them passing. Draws are taken from ``rng``, which
-    also seeds the sampler, so one generator drives the whole estimate.
+    The checks are drawn by :func:`clinr.checks.draw_checks` and the circuit
+    built by :func:`clinr.protocol.build_clinr_tr`. ``rng`` supplies the
+    draws and then seeds Stim's sampler, so one generator drives the whole
+    estimate.
 
-    Args:
-        circuit: The Clifford circuit to implement.
-        n: Number of data qubits.
-        t: Number of chunks.
-        r: Number of checks per chunk.
-        noise: The four rates.
-        shots: Number of shots to sample.
-        rng: NumPy generator.
-        noisy_checks: If True, measure checks with the noisy gadget.
-        restricted_checks: If True, draw checks from the weight-``(n+1)``
-            family instead of uniformly from the full stabilizer group.
-        noisy_q: If True, resolve the tracked Pauli frame into a live corrected
-            state once at the end of the chain, at its noise cost.
-        native_plus: If True, prepare ``|+>`` with a single ``RX`` rather than
-            ``R`` then ``H``.
+    Parameters
+    ----------
+    circuit, n, t, r
+        As in :func:`clinr.checks.draw_checks`.
+    noise : NoiseModel
+    shots : int
+        Shots to sample. Must be positive.
+    rng : numpy.random.Generator
+        Source of randomness.
+    noisy_checks, noisy_q, native_plus : bool, optional
+        As in :func:`clinr.protocol.build_clinr_tr`.
+    restricted_checks : bool, optional
+        As in :func:`clinr.checks.draw_checks`.
 
-    Returns:
-        An :class:`Estimate` holding the counts.
+    Returns
+    -------
+    Estimate
+        With one entry per chunk in each per-chunk tuple.
 
-    Raises:
-        ValueError: if ``shots`` is not positive.
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``shots`` is not positive.
     """
+    _check_rng(rng)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
     drawn = checks.draw_checks(
         circuit, n, t, r, rng, restricted_checks=restricted_checks
     )
     built = protocol.build_clinr_tr(
-        circuit, n, drawn, noise, noisy_checks=noisy_checks,
-        noisy_q=noisy_q, native_plus=native_plus,
+        circuit,
+        n,
+        drawn,
+        noise,
+        noisy_checks=noisy_checks,
+        noisy_q=noisy_q,
+        native_plus=native_plus,
     )
     per_chunk_checks = [len(c) for c in drawn]
     accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
@@ -324,24 +368,34 @@ def estimate_direct(
     shots: int,
     rng: np.random.Generator,
 ) -> Estimate:
-    """Estimate the logical error rate of the direct implementation.
+    """Sample the direct implementation of ``circuit``.
 
-    The direct implementation has no checks, so every shot is accepted and the
-    logical error rate is taken over all shots.
+    The circuit is built by :func:`clinr.protocol.build_direct`; ``rng``
+    seeds Stim's sampler.
 
-    Args:
-        circuit: The Clifford circuit to implement.
-        n: Number of data qubits.
-        noise: The four rates.
-        shots: Number of shots to sample.
-        rng: NumPy generator, used to seed the sampler.
+    Parameters
+    ----------
+    circuit, n
+        As in :func:`clinr.protocol.build_direct`.
+    noise : NoiseModel
+    shots : int
+        Shots to sample. Must be positive.
+    rng : numpy.random.Generator
+        Source of randomness.
 
-    Returns:
-        An :class:`Estimate` holding the counts, with ``accepted == shots``.
+    Returns
+    -------
+    Estimate
+        With every shot accepted and empty per-chunk tuples.
 
-    Raises:
-        ValueError: if ``shots`` is not positive.
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``shots`` is not positive.
     """
+    _check_rng(rng)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
     built = protocol.build_direct(circuit, n, noise)
@@ -364,23 +418,32 @@ def sweep_clinr(
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> list[Estimate]:
-    """Estimate each of ``circuits`` under one set of parameters.
+    """Return :func:`estimate_clinr` of each of ``circuits``, in order.
 
-    One generator is threaded through the sweep, so each circuit's checks and
-    shots are drawn independently. Arguments other than ``circuits`` are as in
-    :func:`estimate_clinr`, and one :class:`Estimate` is returned per circuit,
-    in the order given.
+    One generator is threaded through the sweep, so the circuits' checks
+    and shots are drawn independently. Every other argument is as in
+    :func:`estimate_clinr`.
 
-    Raises:
-        ValueError: if ``circuits`` is empty.
+    Raises
+    ------
+    ValueError
+        If ``circuits`` is empty.
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
     return [
         estimate_clinr(
-            c, n, t, r, noise, shots, rng,
-            noisy_checks=noisy_checks, restricted_checks=restricted_checks,
-            noisy_q=noisy_q, native_plus=native_plus,
+            c,
+            n,
+            t,
+            r,
+            noise,
+            shots,
+            rng,
+            noisy_checks=noisy_checks,
+            restricted_checks=restricted_checks,
+            noisy_q=noisy_q,
+            native_plus=native_plus,
         )
         for c in circuits
     ]
@@ -393,15 +456,16 @@ def sweep_direct(
     shots: int,
     rng: np.random.Generator,
 ) -> list[Estimate]:
-    """Estimate the direct implementation of each of ``circuits``.
+    """Return :func:`estimate_direct` of each of ``circuits``, in order.
 
-    One generator is threaded through the sweep, so each circuit's shots are
-    drawn independently. Arguments other than ``circuits`` are as in
-    :func:`estimate_direct`, and one :class:`Estimate` is returned per circuit,
-    in the order given.
+    One generator is threaded through the sweep, so the circuits' shots are
+    drawn independently. Every other argument is as in
+    :func:`estimate_direct`.
 
-    Raises:
-        ValueError: if ``circuits`` is empty.
+    Raises
+    ------
+    ValueError
+        If ``circuits`` is empty.
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
@@ -409,16 +473,11 @@ def sweep_direct(
 
 
 def _comparable(estimates: list[Estimate]) -> None:
-    """Check that estimates describe one circuit under one set of parameters.
+    """Raise ``ValueError`` unless ``estimates`` are draws for one setting.
 
-    Shot counts may differ: the draw, not the shot, is the unit of
-    observation. Check weights may differ too, since that variation is what
-    repeated draws are for.
-
-    Raises:
-        ValueError: if ``estimates`` is empty, if the gate counts or the
-            per-chunk check counts disagree, or if any estimate accepted no
-            shots.
+    That is: at least one estimate, the same gate counts and checks per
+    chunk throughout, and at least one accepted shot each. Shot counts and
+    check weights may differ between draws.
     """
     if not estimates:
         raise ValueError("estimates must not be empty")
@@ -441,21 +500,32 @@ def _comparable(estimates: list[Estimate]) -> None:
 def cluster_interval(
     estimates: list[Estimate], confidence: float = 0.95
 ) -> tuple[float, float, float]:
-    """Return ``(point, lo, hi)`` for the logical error rate over check sets.
+    """Return ``(point, lo, hi)`` for the logical error rate over draws.
 
-    Each estimate is one draw of the check sets, so a draw is the unit of
-    observation and its shots are not independent of each other. The point
-    estimate is the mean of the per-draw rates and the interval is the
-    two-sided Student t interval on those means at level ``confidence``,
-    clamped to ``[0, 1]``. Pooling the shots instead and taking a Wilson
-    interval understates the uncertainty whenever draws differ
-    systematically (:func:`design_effect` measures that).
+    The point estimate is the mean of the per-draw rates, and the interval
+    the two-sided Student t interval on that mean, clamped to [0, 1]. A
+    Wilson interval on the pooled shots understates the uncertainty whenever
+    draws differ systematically, which :func:`design_effect` measures.
 
-    With one draw the bounds are ``nan``.
+    Parameters
+    ----------
+    estimates : list of Estimate
+        Draws for one setting: the same gate counts and checks per chunk,
+        each with at least one accepted shot.
+    confidence : float, optional
+        Confidence level, strictly between 0 and 1.
 
-    Raises:
-        ValueError: on the conditions of :func:`_comparable`, or if
-            ``confidence`` is not strictly between 0 and 1.
+    Returns
+    -------
+    tuple of (float, float, float)
+        With a single draw the bounds are ``nan``.
+
+    Raises
+    ------
+    ValueError
+        If ``estimates`` is empty, disagree in gate counts or checks per
+        chunk, or include one that accepted no shots, or if ``confidence``
+        is not strictly between 0 and 1.
     """
     _comparable(estimates)
     _check_confidence(confidence)
@@ -464,9 +534,7 @@ def cluster_interval(
     if len(rates) < 2:
         return point, math.nan, math.nan
     df = len(rates) - 1
-    spread = math.sqrt(
-        sum((r - point) ** 2 for r in rates) / df / len(rates)
-    )
+    spread = math.sqrt(sum((r - point) ** 2 for r in rates) / df / len(rates))
     t = float(stats.t.ppf((1.0 + confidence) / 2.0, df))
     return point, max(0.0, point - t * spread), min(1.0, point + t * spread)
 
@@ -474,17 +542,32 @@ def cluster_interval(
 def design_effect(estimates: list[Estimate]) -> float:
     """Return the between-draw variance over the mean within-draw variance.
 
-    One means the draws are no more variable than independent sampling would
-    make them, so a Wilson interval on the pooled shots would be honest.
-    Larger values say clustered intervals should be wider by its square root.
+    The within-draw variance of a draw is the binomial ``p (1 - p) / a`` at
+    its rate ``p`` and accepted count ``a``. A value near 1 means the draws
+    vary no more than independent shots would, so a Wilson interval on the
+    pooled shots is honest; above 1, clustered intervals are wider by its
+    square root.
 
+    Parameters
+    ----------
+    estimates : list of Estimate
+        At least two draws, as in :func:`cluster_interval`.
+
+    Returns
+    -------
+    float
+
+    Raises
+    ------
+    ValueError
+        On the conditions of :func:`cluster_interval` on ``estimates``, if
+        fewer than two are given, or if every draw's rate is 0 or 1, which
+        makes the within-draw variance zero.
+
+    Notes
+    -----
     A draw that saw no errors contributes zero within-draw variance, so the
     ratio is biased upward when errors are rare.
-
-    Raises:
-        ValueError: on the conditions of :func:`_comparable`, if fewer than
-            two estimates are given, or if every draw's rate is 0 or 1, which
-            leaves the within-draw variance zero and the ratio undefined.
     """
     _comparable(estimates)
     if len(estimates) < 2:
@@ -512,34 +595,33 @@ def gate_overhead(
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
-    """Estimate the gate overhead from an estimate's measured acceptance.
+    """Return the gate overhead measured by ``estimate``.
 
-    Identical to :func:`bounds.overhead_bound` except that each chunk is
-    charged the weight of the checks actually drawn, and its restart
-    probability is taken from its measured acceptance rather than bounded
-    analytically; both call the same operation-count helper. Since every
-    attempt runs all of a chunk's checks, that restart probability is the only
-    estimated quantity. Everything but ``n`` is read from ``estimate``: the
-    chunks' gate counts, their checks and their measured acceptance, so no
-    circuit has to be supplied and trusted to be the one that was sampled.
+    :func:`clinr.accounting.expected_overhead`, as in
+    :func:`clinr.bounds.overhead_bound`, but with each chunk's checks at the
+    weight actually drawn and its acceptance probability the fraction of
+    shots its checks accepted. Every attempt runs all of a chunk's checks,
+    so that fraction is the only estimated quantity.
 
-    Args:
-        n: Number of data qubits.
-        estimate: Counts from :func:`estimate_clinr`.
-        noisy_checks: If True, charge each check the ancilla gadget's
-            operations; if False, an idealized check costs nothing. Must match
-            the value passed to :func:`estimate_clinr`.
-        noisy_q: If True, add the ``n`` gates that resolve the tracked Pauli
-            frame into a live corrected state once at the end of the chain.
-        native_plus: If True, charge ``|+>`` as a single native preparation.
-            Must match the value passed to :func:`estimate_clinr`.
+    Parameters
+    ----------
+    n : int
+        Number of data qubits, as passed to :func:`estimate_clinr`. Must be
+        at least 1.
+    estimate : Estimate
+        From :func:`estimate_clinr`, with at least one gate and every chunk
+        accepting at least one shot.
+    noisy_checks, noisy_q, native_plus : bool, optional
+        As passed to :func:`estimate_clinr`.
 
-    Returns:
-        The estimated expected gate overhead.
+    Returns
+    -------
+    float
 
-    Raises:
-        ValueError: if ``estimate`` has no chunks, if any chunk accepted no
-            shots, or if the chunks contain no gates.
+    Raises
+    ------
+    ValueError
+        If ``estimate`` has no chunks or a chunk accepted no shots.
     """
     if not estimate.chunk_accepted:
         raise ValueError("estimate has no chunks")
@@ -573,21 +655,36 @@ def mean_gate_overhead(
     noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
-    """Mean of :func:`gate_overhead` over check-set draws.
+    """Return the mean of :func:`gate_overhead` over draws.
 
-    Each draw counts equally, whatever its number of shots, because the
-    marginal is taken over draws. The mean of the per-draw overheads is not
-    the overhead of the summed counts: each draw has its own check weights and
-    its own restart probability.
+    Each draw counts equally, whatever its number of shots. This is not the
+    overhead of the pooled counts, since each draw has its own check weights
+    and acceptance.
 
-    Raises:
-        ValueError: on the conditions of :func:`_comparable`, or from
-            :func:`gate_overhead`.
+    Parameters
+    ----------
+    n, noisy_checks, noisy_q, native_plus
+        As in :func:`gate_overhead`.
+    estimates : list of Estimate
+        Draws as in :func:`cluster_interval`, each as in
+        :func:`gate_overhead`.
+
+    Returns
+    -------
+    float
+
+    Raises
+    ------
+    ValueError
+        On the conditions of :func:`cluster_interval` on ``estimates``.
     """
     _comparable(estimates)
     overheads = [
         gate_overhead(
-            n, e, noisy_checks=noisy_checks, noisy_q=noisy_q,
+            n,
+            e,
+            noisy_checks=noisy_checks,
+            noisy_q=noisy_q,
             native_plus=native_plus,
         )
         for e in estimates

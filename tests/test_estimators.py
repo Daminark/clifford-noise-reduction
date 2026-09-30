@@ -117,6 +117,7 @@ def test_wilson_interval_rejects_invalid_arguments(
         ({"chunk_accepted": (899,)}, "every chunk accepts at least"),
         ({"chunk_checks": (2, 2)}, "disagree in length"),
         ({"chunk_counts": ((6, 3),)}, "chunk gate counts sum to"),
+        ({"chunk_weight": (1,)}, "at least its number of checks"),
     ],
 )
 def test_estimate_rejects_inconsistent_counts(fields, message):
@@ -215,6 +216,17 @@ def test_estimates_reject_a_shot_count_below_one(estimate):
             estimators.estimate_clinr(circuit, 2, 1, 1, NOISELESS, 0, rng)
         else:
             estimators.estimate_direct(circuit, 2, NOISELESS, 0, rng)
+
+
+@pytest.mark.parametrize("estimate", ["clinr", "direct"])
+def test_estimates_reject_a_legacy_random_state(estimate):
+    circuit, rng = seeded_circuit(2, 5, seed=0), np.random.RandomState(0)
+
+    with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
+        if estimate == "clinr":
+            estimators.estimate_clinr(circuit, 2, 1, 1, NOISELESS, 10, rng)
+        else:
+            estimators.estimate_direct(circuit, 2, NOISELESS, 10, rng)
 
 
 @pytest.mark.parametrize("sweep", ["clinr", "direct"])
