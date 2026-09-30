@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked
+      - run: uv run --locked ruff check
+      # The tests are not yet formatted; widen to the whole repo once they are.
+      - run: uv run --locked ruff format --check src
+      - run: uv run --locked mypy
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked
+      - name: Fast suite
+        if: github.event_name == 'push'
+        run: uv run --locked pytest
+      - name: Full suite
+        if: github.event_name != 'push'
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: uv run --locked pytest --runslow
