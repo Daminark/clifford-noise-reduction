@@ -19,7 +19,9 @@ def seeded_circuit(n: int, size: int, seed: int) -> stim.Circuit:
 
 
 def draw(errors: int, accepted: int, **fields) -> estimators.Estimate:
-    """Return a hand-built one-chunk estimate: 10 gates, two weight-5 checks.
+    """Return a hand-built one-chunk estimate at n = 1: 10 gates, 2 checks.
+
+    At ``n = 1`` every check has weight 2, so the two weigh 4 in total.
 
     ``chunk_accepted`` defaults to ``accepted``; any field can be overridden.
     """
@@ -29,9 +31,10 @@ def draw(errors: int, accepted: int, **fields) -> estimators.Estimate:
         "errors": errors,
         "s1": 6,
         "s2": 4,
+        "n": 1,
         "chunk_accepted": (accepted,),
         "chunk_checks": (2,),
-        "chunk_weight": (5,),
+        "chunk_weight": (4,),
         "chunk_counts": ((6, 4),),
     }
     return estimators.Estimate(**(values | fields))
@@ -110,14 +113,20 @@ def test_wilson_interval_rejects_invalid_arguments(
         ({"shots": 0, "accepted": 0, "chunk_accepted": (0,)}, "shots must"),
         ({"errors": -1}, "errors must be non-negative"),
         ({"s1": -6, "chunk_counts": ((-6, 4),)}, "s1 must be non-negative"),
-        ({"chunk_weight": (-5,)}, "chunk_weight must be non-negative"),
+        ({"chunk_weight": (-4,)}, "chunk_weight must be non-negative"),
+        ({"n": 0}, "n must be at least 1"),
         ({"accepted": 1001}, "cannot exceed shots"),
         ({"errors": 901}, "cannot exceed accepted"),
         ({"chunk_accepted": (1001,)}, "no chunk can accept more"),
         ({"chunk_accepted": (899,)}, "every chunk accepts at least"),
         ({"chunk_checks": (2, 2)}, "disagree in length"),
         ({"chunk_counts": ((6, 3),)}, "chunk gate counts sum to"),
-        ({"chunk_weight": (1,)}, "at least its number of checks"),
+        ({"chunk_weight": (1,)}, "between its number of checks and 2"),
+        ({"chunk_weight": (5,)}, "between its number of checks and 2"),
+        (
+            {"n": 2, "restricted_checks": True, "chunk_weight": (7,)},
+            "between its number of checks and 3",
+        ),
     ],
 )
 def test_estimate_rejects_inconsistent_counts(fields, message):
@@ -243,44 +252,58 @@ def test_sweeps_reject_an_empty_list_of_circuits(sweep):
 # ---------------------------------------------------------------------------
 # gate_overhead and mean_gate_overhead
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize(("accepted", "expected"), [(1000, 3.1), (500, 5.8)])
+@pytest.mark.parametrize(("accepted", "expected"), [(1000, 3.0), (500, 5.6)])
 def test_gate_overhead_on_a_hand_worked_estimate(accepted, expected):
-    """Worked by hand: (4 + 27 / acceptance) / 10.
+    """Worked by hand: (4 + 26 / acceptance) / 10.
 
-    One chunk at n = 1 of 10 gates, with two checks of total weight 5.
-    Protected region: preparation 4, gates 10, checks 2*2 + 5 + 2 + 2 = 13,
-    so 27 per attempt; teleportation 4 once.
+    One chunk at n = 1 of 10 gates, with two checks of total weight 4.
+    Protected region: preparation 4, gates 10, checks 2*2 + 4 + 2 + 2 = 12,
+    so 26 per attempt; teleportation 4 once.
     """
-    assert estimators.gate_overhead(1, draw(0, accepted)) == pytest.approx(
+    assert estimators.gate_overhead(draw(0, accepted)) == pytest.approx(
         expected
     )
 
 
 def test_gate_overhead_charges_each_chunk_its_own_acceptance():
-    """Worked by hand: (4 + 27 + 4 + 17 / 0.5) / 10 = 6.9.
+    """Worked by hand: (4 + 26 + 4 + 16 / 0.5) / 10 = 6.6.
 
-    The first chunk holds all 10 gates and always accepts (4 + 27 per
-    pass); the second is empty and accepts half the time, so its 4 + 0 + 13
+    The first chunk holds all 10 gates and always accepts (4 + 26 per
+    pass); the second is empty and accepts half the time, so its 4 + 0 + 12
     protected operations are paid twice on average, plus its teleportation.
-    Charging both chunks the joint acceptance of 0.5 would give 9.6.
+    Charging both chunks the joint acceptance of 0.5 would give 9.2.
     """
     estimate = draw(
         0, 500, chunk_accepted=(1000, 500), chunk_checks=(2, 2),
-        chunk_weight=(5, 5), chunk_counts=((6, 4), (0, 0)),
+        chunk_weight=(4, 4), chunk_counts=((6, 4), (0, 0)),
     )
 
-    assert estimators.gate_overhead(1, estimate) == pytest.approx(6.9)
+    assert estimators.gate_overhead(estimate) == pytest.approx(6.6)
+
+
+def test_gate_overhead_reads_the_options_from_the_estimate():
+    """Worked by hand, as the one-chunk example with every option changed.
+
+    Idealized checks cost nothing, and a native |+> drops the preparation's
+    Hadamard: protected region 3 + 10, teleportation 4, and 1 more for the
+    frame, so (4 + 13 + 1) / 10 = 1.8.
+    """
+    estimate = draw(
+        0, 1000, noisy_checks=False, native_plus=True, noisy_q=True
+    )
+
+    assert estimators.gate_overhead(estimate) == pytest.approx(1.8)
 
 
 def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():
-    """Worked by hand: the per-draw overheads are 3.1 and 5.8.
+    """Worked by hand: the per-draw overheads are 3.0 and 5.6.
 
     Pooling the counts would give acceptance 0.75 and an overhead of
-    (4 + 27 / 0.75) / 10 = 4.0 instead.
+    (4 + 26 / 0.75) / 10 = 3.87 instead.
     """
     draws = [draw(0, 1000), draw(0, 500)]
 
-    assert estimators.mean_gate_overhead(1, draws) == pytest.approx(4.45)
+    assert estimators.mean_gate_overhead(draws) == pytest.approx(4.3)
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
@@ -296,7 +319,7 @@ def test_gate_overhead_at_zero_noise_is_at_most_the_bound(n):
         circuit, n, 2, 3, NOISELESS, 100, np.random.default_rng(n)
     )
 
-    measured = estimators.gate_overhead(n, estimate)
+    measured = estimators.gate_overhead(estimate)
     bound = bounds.overhead_bound(circuit, n, 2, 3, NOISELESS)
 
     if n == 1:
@@ -306,15 +329,15 @@ def test_gate_overhead_at_zero_noise_is_at_most_the_bound(n):
 
 
 def test_gate_overhead_rejects_an_estimate_without_chunks():
-    direct = estimators.Estimate(100, 100, 3, 6, 4)
+    direct = estimators.Estimate(100, 100, 3, 6, 4, 1)
 
     with pytest.raises(ValueError, match="estimate has no chunks"):
-        estimators.gate_overhead(1, direct)
+        estimators.gate_overhead(direct)
 
 
 def test_gate_overhead_rejects_a_chunk_that_accepted_nothing():
     with pytest.raises(ValueError, match="a chunk accepted no shots"):
-        estimators.gate_overhead(1, draw(0, 0))
+        estimators.gate_overhead(draw(0, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +401,8 @@ def test_design_effect_is_undefined_when_no_draw_saw_an_error():
          "gate counts disagree"),
         ([draw(1, 900), draw(1, 900, chunk_checks=(3,))],
          "checks per chunk disagree"),
+        ([draw(1, 900), draw(1, 900, noisy_checks=False)], "options disagree"),
+        ([draw(1, 900), draw(1, 900, n=2)], "options disagree"),
         ([draw(1, 900), draw(0, 0)], "accepted no shots"),
     ],
 )

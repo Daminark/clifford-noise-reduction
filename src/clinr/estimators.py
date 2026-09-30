@@ -122,6 +122,8 @@ class Estimate:
         ``accepted``.
     s1, s2 : int
         Single- and two-qubit gate counts of the circuit.
+    n : int
+        Number of data qubits. Must be at least 1.
     chunk_accepted : tuple of int, optional
         For each chunk, in order, the shots its own checks accepted:
         between ``accepted`` and ``shots``. A chunk without checks accepts
@@ -129,10 +131,16 @@ class Estimate:
     chunk_checks : tuple of int, optional
         Checks measured in each chunk.
     chunk_weight : tuple of int, optional
-        Total weight of each chunk's checks, at least its number of checks,
-        since no check is the identity.
+        Total weight of each chunk's checks: at least its number of checks,
+        since no check is the identity, and at most that number times the
+        family's worst-case weight, ``n + 1`` if ``restricted_checks`` and
+        ``2n`` otherwise.
     chunk_counts : tuple of tuple of (int, int), optional
         Gate counts ``(s1, s2)`` of each chunk, summing to ``(s1, s2)``.
+    noisy_checks, restricted_checks, noisy_q, native_plus : bool, optional
+        The options the circuit was built and its checks drawn with, as in
+        :func:`estimate_clinr`. The direct implementation keeps the
+        defaults.
 
     The four per-chunk tuples have one length: the number of chunks, or
     zero for the direct implementation. All counts are non-negative.
@@ -148,15 +156,22 @@ class Estimate:
     errors: int
     s1: int
     s2: int
+    n: int
     chunk_accepted: tuple[int, ...] = ()
     chunk_checks: tuple[int, ...] = ()
     chunk_weight: tuple[int, ...] = ()
     chunk_counts: tuple[tuple[int, int], ...] = ()
+    noisy_checks: bool = True
+    restricted_checks: bool = False
+    noisy_q: bool = False
+    native_plus: bool = False
 
     def __post_init__(self) -> None:
         """Check the constraints stated in the class docstring."""
         if self.shots < 1:
             raise ValueError(f"shots must be positive, got {self.shots}")
+        if self.n < 1:
+            raise ValueError(f"n must be at least 1, got {self.n}")
         for name, value in (
             ("accepted", self.accepted),
             ("errors", self.errors),
@@ -194,14 +209,15 @@ class Estimate:
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
             )
+        worst = self.n + 1 if self.restricted_checks else 2 * self.n
         if any(
-            w < c
+            not c <= w <= c * worst
             for w, c in zip(self.chunk_weight, self.chunk_checks, strict=False)
         ):
             raise ValueError(
-                "each chunk's check weight must be at least its number of "
-                f"checks, got weights {self.chunk_weight} for checks "
-                f"{self.chunk_checks}"
+                "each chunk's check weight must lie between its number of "
+                f"checks and {worst} times it, got weights "
+                f"{self.chunk_weight} for checks {self.chunk_checks}"
             )
         lengths = {
             len(self.chunk_accepted),
@@ -354,10 +370,15 @@ def estimate_clinr(
         errors,
         s1,
         s2,
+        n,
         per_chunk,
         tuple(per_chunk_checks),
         tuple(sum(p.weight for p in c) for c in drawn),
         chunk_counts,
+        noisy_checks=noisy_checks,
+        restricted_checks=restricted_checks,
+        noisy_q=noisy_q,
+        native_plus=native_plus,
     )
 
 
@@ -401,7 +422,7 @@ def estimate_direct(
     built = protocol.build_direct(circuit, n, noise)
     accepted, errors, _ = _tally(built, shots, rng, [])
     s1, s2 = accounting.gate_counts(circuit)
-    return Estimate(shots, accepted, errors, s1, s2)
+    return Estimate(shots, accepted, errors, s1, s2, n)
 
 
 def sweep_clinr(
@@ -472,12 +493,23 @@ def sweep_direct(
     return [estimate_direct(c, n, noise, shots, rng) for c in circuits]
 
 
+def _setting(estimate: Estimate) -> dict[str, int | bool]:
+    """Return the ``n`` and options that ``estimate`` was taken with."""
+    return {
+        "n": estimate.n,
+        "noisy_checks": estimate.noisy_checks,
+        "restricted_checks": estimate.restricted_checks,
+        "noisy_q": estimate.noisy_q,
+        "native_plus": estimate.native_plus,
+    }
+
+
 def _comparable(estimates: list[Estimate]) -> None:
     """Raise ``ValueError`` unless ``estimates`` are draws for one setting.
 
-    That is: at least one estimate, the same gate counts and checks per
-    chunk throughout, and at least one accepted shot each. Shot counts and
-    check weights may differ between draws.
+    That is: at least one estimate, the same gate counts, checks per chunk,
+    ``n`` and options throughout, and at least one accepted shot each. Shot
+    counts and check weights may differ between draws.
     """
     if not estimates:
         raise ValueError("estimates must not be empty")
@@ -492,6 +524,11 @@ def _comparable(estimates: list[Estimate]) -> None:
             raise ValueError(
                 f"checks per chunk disagree: {first.chunk_checks} "
                 f"and {other.chunk_checks}"
+            )
+        if _setting(other) != _setting(first):
+            raise ValueError(
+                f"n or options disagree: {_setting(first)} "
+                f"and {_setting(other)}"
             )
         if other.accepted == 0:
             raise ValueError("an estimate accepted no shots")
@@ -510,8 +547,8 @@ def cluster_interval(
     Parameters
     ----------
     estimates : list of Estimate
-        Draws for one setting: the same gate counts and checks per chunk,
-        each with at least one accepted shot.
+        Draws for one setting: the same gate counts, checks per chunk,
+        ``n`` and options, each with at least one accepted shot.
     confidence : float, optional
         Confidence level, strictly between 0 and 1.
 
@@ -523,9 +560,9 @@ def cluster_interval(
     Raises
     ------
     ValueError
-        If ``estimates`` is empty, disagree in gate counts or checks per
-        chunk, or include one that accepted no shots, or if ``confidence``
-        is not strictly between 0 and 1.
+        If ``estimates`` is empty, disagree in gate counts, checks per
+        chunk, ``n`` or options, or include one that accepted no shots, or
+        if ``confidence`` is not strictly between 0 and 1.
     """
     _comparable(estimates)
     _check_confidence(confidence)
@@ -587,32 +624,21 @@ def design_effect(estimates: list[Estimate]) -> float:
     return between / within
 
 
-def gate_overhead(
-    n: int,
-    estimate: Estimate,
-    *,
-    noisy_checks: bool = True,
-    noisy_q: bool = False,
-    native_plus: bool = False,
-) -> float:
+def gate_overhead(estimate: Estimate) -> float:
     """Return the gate overhead measured by ``estimate``.
 
     :func:`clinr.accounting.expected_overhead`, as in
     :func:`clinr.bounds.overhead_bound`, but with each chunk's checks at the
     weight actually drawn and its acceptance probability the fraction of
     shots its checks accepted. Every attempt runs all of a chunk's checks,
-    so that fraction is the only estimated quantity.
+    so that fraction is the only estimated quantity; everything else is
+    read from ``estimate``.
 
     Parameters
     ----------
-    n : int
-        Number of data qubits, as passed to :func:`estimate_clinr`. Must be
-        at least 1.
     estimate : Estimate
         From :func:`estimate_clinr`, with at least one gate and every chunk
         accepting at least one shot.
-    noisy_checks, noisy_q, native_plus : bool, optional
-        As passed to :func:`estimate_clinr`.
 
     Returns
     -------
@@ -632,29 +658,24 @@ def gate_overhead(
         )
 
     regions = [
-        accounting.check_region(count, weight, noisy_checks, native_plus)
+        accounting.check_region(
+            count, weight, estimate.noisy_checks, estimate.native_plus
+        )
         for count, weight in zip(
             estimate.chunk_checks, estimate.chunk_weight, strict=True
         )
     ]
     return accounting.expected_overhead(
         list(estimate.chunk_counts),
-        n,
-        accounting.prep_region(n, native_plus),
+        estimate.n,
+        accounting.prep_region(estimate.n, estimate.native_plus),
         regions,
         [a / estimate.shots for a in estimate.chunk_accepted],
-        noisy_q,
+        estimate.noisy_q,
     )
 
 
-def mean_gate_overhead(
-    n: int,
-    estimates: list[Estimate],
-    *,
-    noisy_checks: bool = True,
-    noisy_q: bool = False,
-    native_plus: bool = False,
-) -> float:
+def mean_gate_overhead(estimates: list[Estimate]) -> float:
     """Return the mean of :func:`gate_overhead` over draws.
 
     Each draw counts equally, whatever its number of shots. This is not the
@@ -663,8 +684,6 @@ def mean_gate_overhead(
 
     Parameters
     ----------
-    n, noisy_checks, noisy_q, native_plus
-        As in :func:`gate_overhead`.
     estimates : list of Estimate
         Draws as in :func:`cluster_interval`, each as in
         :func:`gate_overhead`.
@@ -679,14 +698,5 @@ def mean_gate_overhead(
         On the conditions of :func:`cluster_interval` on ``estimates``.
     """
     _comparable(estimates)
-    overheads = [
-        gate_overhead(
-            n,
-            e,
-            noisy_checks=noisy_checks,
-            noisy_q=noisy_q,
-            native_plus=native_plus,
-        )
-        for e in estimates
-    ]
+    overheads = [gate_overhead(e) for e in estimates]
     return sum(overheads) / len(overheads)
