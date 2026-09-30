@@ -124,25 +124,23 @@ def test_bounds_on_a_hand_worked_restricted_example():
     ) == pytest.approx(overhead)
 
 
-@pytest.mark.parametrize(
-    ("counts", "expected"),
-    [
-        ((1, 0, 0, 0), 0.1),
-        ((0, 1, 0, 0), 0.2),
-        ((0, 0, 1, 0), 0.3),
-        ((0, 0, 0, 1), 0.4),
-        ((1, 1, 1, 1), 1 - 0.9 * 0.8 * 0.7 * 0.6),
-    ],
-)
-def test_fault_prob_charges_each_count_at_its_own_rate(counts, expected):
-    noise = noise_models.NoiseModel(p1=0.1, p2=0.2, p_m=0.3, p_prep=0.4)
+def test_plog_bound_charges_each_kind_of_operation_at_its_own_rate():
+    """Worked by hand at n = 1, C = H, t = 1 and r = 0, four distinct rates.
 
-    assert bounds.fault_prob(noise, *counts) == pytest.approx(expected)
+    The resource is 2 preparations, 2 single-qubit gates (the |+> Hadamard
+    and C) and a CX; the teleportation is a CX, a Hadamard and 2
+    measurements. With no checks the protected region is the resource, so
+    swapping any two rates changes the value.
+    """
+    p1, p2, p_m, p_prep = 0.001, 0.002, 0.003, 0.004
+    noise = noise_models.NoiseModel(p1=p1, p2=p2, p_m=p_m, p_prep=p_prep)
+    resource_clean = (1 - p1) ** 2 * (1 - p2) * (1 - p_prep) ** 2
+    teleport_clean = (1 - p1) * (1 - p2) * (1 - p_m) ** 2
+    plog = (1 - resource_clean + 1 - teleport_clean) / resource_clean
 
+    bound = bounds.plog_bound(stim.Circuit("H 0"), 1, 1, 0, noise)
 
-def test_fault_prob_rejects_negative_counts():
-    with pytest.raises(ValueError, match="counts must be non-negative"):
-        bounds.fault_prob(UNIFORM, 1, -1, 0, 0)
+    assert bound == pytest.approx(plog)
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +311,24 @@ def test_bounds_reject_invalid_sizes(n, r, message):
     for bound in (bounds.plog_bound, bounds.overhead_bound):
         with pytest.raises(ValueError, match=message):
             bound(stim.Circuit("CX 0 1"), n, 1, r, UNIFORM)
+
+
+@pytest.mark.parametrize("max_overhead", [0.0, -1.0, math.nan])
+def test_choose_tr_rejects_an_overhead_limit_that_is_not_positive(
+    max_overhead,
+):
+    with pytest.raises(ValueError, match="max_overhead must be positive"):
+        bounds.choose_tr(
+            stim.Circuit("CX 0 1"), 2, UNIFORM,
+            max_overhead=max_overhead, r_max=2,
+        )
+
+
+def test_choose_tr_rejects_a_circuit_without_gates():
+    with pytest.raises(ValueError, match="at least one gate"):
+        bounds.choose_tr(
+            stim.Circuit(), 2, UNIFORM, max_overhead=10.0, r_max=2
+        )
 
 
 def test_overhead_bound_rejects_a_circuit_without_gates():
