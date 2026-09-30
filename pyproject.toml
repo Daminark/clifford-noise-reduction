@@ -88,7 +88,6 @@ number = true                  # number ordered lists 1, 2, 3 in the source
 [tool.repo-review]
 # Checks of the Scientific Python guide waived on purpose.
 ignore = [
-    "PY007", # one contributor and a handful of documented commands
     "PC140", # mypy needs the locked environment, so CI runs it instead
     "PC170", # no reStructuredText
     "PC901", # PC901 to PC903 configure pre-commit.ci, which is not used:

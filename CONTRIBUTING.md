@@ -15,11 +15,12 @@ Add a dependency with `uv add` (or `uv add --dev`) and commit the updated `uv.lo
 
 ## Checks
 
+The checks are [nox](https://nox.thea.codes) sessions, which CI runs too.
+
 ```bash
-pre-commit run --all-files
-uv run mypy
-uv run pytest                                    # fast suite
-HYPOTHESIS_PROFILE=ci uv run pytest --runslow    # full suite, as on pull requests
+uvx nox                 # lint, typecheck and the fast tests, as on every push
+uvx nox -s tests_full   # every test, as on pull requests
+uvx nox -l              # list the sessions
 ```
 
 ## Conventions
