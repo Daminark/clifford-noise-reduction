@@ -1,14 +1,19 @@
-"""Operation counts for CliNR as built, shared by bounds and estimators.
+"""Operation counts for the circuits :mod:`clinr.protocol` builds.
 
-A region is a count of operations ``(n1, n2, nm, n_prep)``: single-qubit
-gates, two-qubit gates, measurements and preparations. The bounds turn a
-region into a fault probability; the gate overhead turns it into an operation
-count. Keeping the counts here means both read the same numbers for the same
-circuit.
+A :class:`Region` counts the operations of one part of a built circuit by
+kind. :mod:`clinr.bounds` turns a region into a fault probability and
+:mod:`clinr.estimators` into an operation count, so both read the same
+numbers for the same circuit.
 
 Per chunk the protocol has four regions: the resource preparation, the
 chunk's own gates, its checks, and the teleportation after the last check.
-Frame resolution, when priced, is one further region for the whole chain.
+Resolving the Pauli frame, when charged, is one further region for the
+whole chain.
+
+References
+----------
+.. [1] N. Delfosse and E. Tham, "Low-cost noise reduction for Clifford
+   circuits", arXiv:2407.06583 (2024).
 """
 
 from __future__ import annotations
@@ -22,13 +27,18 @@ from . import protocol
 
 
 class Region(NamedTuple):
-    """Operation counts for one region of the built circuit.
+    """Operation counts for one region of a built circuit.
 
-    Attributes:
-        n1: Single-qubit gates.
-        n2: Two-qubit gates.
-        nm: Measurements.
-        n_prep: Preparations.
+    Parameters
+    ----------
+    n1 : int
+        Single-qubit gates.
+    n2 : int
+        Two-qubit gates.
+    nm : int
+        Measurements.
+    n_prep : int
+        Preparations.
     """
 
     n1: int
@@ -53,15 +63,24 @@ __all__ = [
 ]
 
 
+def _check_n(n: int) -> None:
+    """Raise ``ValueError`` unless ``n`` is at least 1."""
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
+
+
 def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
-    """Return ``(s1, s2)``, the single- and two-qubit gate counts.
+    """Return ``(s1, s2)``, the numbers of single- and two-qubit gates.
 
-    Counted over :func:`protocol.gate_list`, so identities are ignored
-    and fused instructions are split.
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        As accepted by :func:`clinr.protocol.gate_list`, whose gates are the
+        ones counted.
 
-    Raises:
-        ValueError: propagated from :func:`protocol.gate_list` if an
-            instruction is malformed.
+    Returns
+    -------
+    tuple of (int, int)
     """
     s1 = s2 = 0
     for _, targets in protocol.gate_list(circuit):
@@ -73,31 +92,73 @@ def gate_counts(circuit: stim.Circuit) -> tuple[int, int]:
 
 
 def add(*regions: Region) -> Region:
-    """Elementwise sum of regions."""
+    """Return the elementwise sum of ``regions``, or :data:`ZERO` if none."""
+    if not regions:
+        return ZERO
     return Region(*(sum(counts) for counts in zip(*regions, strict=True)))
 
 
 def prep_region(n: int, native_plus: bool) -> Region:
-    """One resource preparation of ``n`` Bell pairs.
+    """Return the region of one resource preparation of ``n`` Bell pairs.
 
-    ``2n`` resets and ``n`` controlled-Paulis either way. ``|+>`` costs ``n``
-    further single-qubit gates as ``R`` then ``H``, and none as a native
-    ``RX``.
+    ``2n`` preparations and ``n`` ``CX`` either way, plus ``n`` Hadamards
+    unless ``native_plus``, when ``|+>`` is one ``RX`` rather than ``R``
+    then ``H``.
+
+    Parameters
+    ----------
+    n : int
+        Number of Bell pairs. Must be at least 1.
+    native_plus : bool
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
     """
+    _check_n(n)
     return Region(n1=0 if native_plus else n, n2=n, nm=0, n_prep=2 * n)
 
 
 def check_region(
     count: int, weight: int, noisy_checks: bool, native_plus: bool
 ) -> Region:
-    """``count`` checks of total weight ``weight``.
+    """Return the region of ``count`` checks of total weight ``weight``.
 
-    A weight-``w`` check is measured by a gadget of one preparation, ``w``
-    controlled-Paulis, one measurement, and two single-qubit gates, or one
-    under ``native_plus``, where an ``RX`` replaces the reset and the Hadamard
-    that follows it. An idealized check is a projective measurement with no
-    fault locations, so every count is zero.
+    A noisy weight-``w`` check is one preparation, two Hadamards (one under
+    ``native_plus``), ``w`` controlled Paulis and one measurement: ``w + 4``
+    operations, or ``w + 3``. An idealized check has no fault locations.
+
+    Parameters
+    ----------
+    count : int
+        Number of checks. Must be non-negative.
+    weight : int
+        Their total weight. Must be at least ``count``, since no check is
+        the identity.
+    noisy_checks : bool
+        If False, the checks are idealized and the region is :data:`ZERO`.
+    native_plus : bool
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``count`` is negative or ``weight`` is less than ``count``.
     """
+    if count < 0:
+        raise ValueError(f"count must be non-negative, got {count}")
+    if weight < count:
+        raise ValueError(
+            f"weight must be at least count = {count}, got {weight}"
+        )
     if not noisy_checks:
         return ZERO
     return Region(
@@ -109,30 +170,81 @@ def check_region(
 
 
 def teleport_region(n: int) -> Region:
-    """The teleportation after a chunk's last check.
+    """Return the region of the teleportation after a chunk's last check.
 
-    ``n`` controlled-Paulis, ``n`` Hadamards and ``2n`` measurements. The
-    Pauli correction is tracked classically, so it is not part of this region.
+    ``n`` ``CX``, ``n`` Hadamards and ``2n`` measurements: the ``4n`` of the
+    paper's ``5n`` that remain when the Pauli correction is tracked
+    classically ([1]_, proof of Lemma 1).
+
+    Parameters
+    ----------
+    n : int
+        Number of data qubits. Must be at least 1.
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
     """
+    _check_n(n)
     return Region(n1=n, n2=n, nm=2 * n, n_prep=0)
 
 
 def frame_region(n: int) -> Region:
-    """Resolving the tracked Pauli frame once, at the end of the chain."""
+    """Return the region of resolving the Pauli frame once, at the end.
+
+    One single-qubit location per data qubit, whether or not that qubit's
+    correction is trivial.
+
+    Parameters
+    ----------
+    n : int
+        Number of data qubits. Must be at least 1.
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
+    """
+    _check_n(n)
     return Region(n1=n, n2=0, nm=0, n_prep=0)
 
 
-def protected_region(
-    prep: Region, s1: int, s2: int, checks: Region
-) -> Region:
-    """One attempt at a chunk, up to and including its last check.
+def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
+    """Return the region of one attempt at a chunk, through its last check.
 
-    Args:
-        prep: The resource preparation (:func:`prep_region`).
-        s1: Single-qubit gate count of the chunk.
-        s2: Two-qubit gate count of the chunk.
-        checks: All of the chunk's checks (:func:`check_region`).
+    Parameters
+    ----------
+    prep : Region
+        The resource preparation, from :func:`prep_region`.
+    s1 : int
+        Single-qubit gates in the chunk. Must be non-negative.
+    s2 : int
+        Two-qubit gates in the chunk. Must be non-negative.
+    checks : Region
+        All of the chunk's checks, from :func:`check_region`.
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``s1`` or ``s2`` is negative.
     """
+    if s1 < 0 or s2 < 0:
+        raise ValueError(
+            f"gate counts must be non-negative, got s1 = {s1}, s2 = {s2}"
+        )
     return add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0), checks)
 
 
@@ -144,36 +256,59 @@ def expected_overhead(
     acceptance: list[float],
     noisy_q: bool,
 ) -> float:
-    """Expected operations per gate, given each chunk's acceptance probability.
+    """Return the expected number of operations per gate of the circuit.
 
-    Every attempt runs all of its chunk's checks, so an attempt at chunk ``k``
-    costs exactly ``m_k`` operations and the number of attempts is geometric
-    with mean ``1 / q_k``. Each chunk also pays its teleportation once, and
-    frame resolution is paid once for the chain when ``noisy_q``. The total is
-    divided by the number of gates across the chunks, which is the size of the
-    circuit they came from. The acceptance probabilities may be bounded
-    analytically or measured, which is the only difference between the
-    analytic and empirical gate overheads.
+    Every attempt at chunk ``k`` runs all of its checks, so it costs the
+    ``m_k`` operations of its :func:`protected_region`, and the number of
+    attempts is geometric with mean ``1 / q_k``. Each chunk also pays its
+    teleportation once, and frame resolution is paid once for the chain when
+    ``noisy_q``. This is Eq. (B4) of [1]_ with the acceptance ``q_k`` in
+    place of ``1 - p_res`` and the teleportation's ``4n`` in place of
+    ``5n``. The total is divided by the number of gates across the chunks.
 
-    Args:
-        counts: Gate counts ``(s1, s2)`` per chunk, in chunk order.
-        n: Number of data qubits.
-        prep: The resource preparation, shared by every chunk.
-        check_regions: Each chunk's checks, in chunk order.
-        acceptance: Each chunk's acceptance probability ``q_k``, in chunk
-            order.
-        noisy_q: If True, add the one-time frame resolution.
+    Parameters
+    ----------
+    counts : list of tuple of (int, int)
+        ``(s1, s2)`` for each chunk, in chunk order, not all zero.
+    n : int
+        Number of data qubits. Must be at least 1.
+    prep : Region
+        The resource preparation, the same for every chunk.
+    check_regions : list of Region
+        Each chunk's checks, in chunk order.
+    acceptance : list of float
+        Each chunk's acceptance probability ``q_k``, in chunk order, in
+        [0, 1]. Analytic bounds and measured frequencies are both accepted;
+        the result is a bound or an estimate accordingly.
+    noisy_q : bool
+        If True, add the frame resolution of :func:`frame_region`.
 
-    Returns:
+    Returns
+    -------
+    float
         The expected overhead, or ``math.inf`` if any ``q_k`` is zero.
 
-    Raises:
-        ValueError: if the three per-chunk sequences differ in length, or if
-            the chunks contain no gates.
+    Raises
+    ------
+    ValueError
+        If ``counts``, ``check_regions`` and ``acceptance`` differ in
+        length, if the chunks hold no gates, or if an acceptance probability
+        lies outside [0, 1].
     """
+    lengths = {len(counts), len(check_regions), len(acceptance)}
+    if len(lengths) > 1:
+        raise ValueError(
+            "counts, check_regions and acceptance must have one entry per "
+            f"chunk, got {len(counts)}, {len(check_regions)} and "
+            f"{len(acceptance)}"
+        )
     size = sum(s1 + s2 for s1, s2 in counts)
     if size == 0:
-        raise ValueError("circuit must contain at least one gate")
+        raise ValueError("the chunks must hold at least one gate")
+    if not all(0.0 <= q <= 1.0 for q in acceptance):
+        raise ValueError(
+            f"acceptance probabilities must lie in [0, 1], got {acceptance}"
+        )
     tail = sum(teleport_region(n))
     expected = 0.0
     for (s1, s2), checks, q in zip(

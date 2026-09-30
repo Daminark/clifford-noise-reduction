@@ -200,11 +200,51 @@ def test_expected_overhead_rejects_chunks_without_gates():
 
 
 def test_expected_overhead_rejects_per_chunk_sequences_of_unequal_length():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="one entry per chunk"):
         accounting.expected_overhead(
             [(2, 1), (1, 0)], 1, accounting.ZERO, [accounting.ZERO],
             [1.0, 1.0], False,
         )
+
+
+@pytest.mark.parametrize("q", [-0.1, 1.1, math.nan])
+def test_expected_overhead_rejects_an_acceptance_outside_the_unit_interval(q):
+    with pytest.raises(ValueError, match=r"must lie in \[0, 1\]"):
+        accounting.expected_overhead(
+            [(2, 1)], 1, accounting.ZERO, [accounting.ZERO], [q], False
+        )
+
+
+@pytest.mark.parametrize(
+    ("region", "args"),
+    [
+        (accounting.prep_region, (0, False)),
+        (accounting.teleport_region, (0,)),
+        (accounting.frame_region, (0,)),
+    ],
+)
+def test_regions_reject_n_below_one(region, args):
+    with pytest.raises(ValueError, match="n must be at least 1"):
+        region(*args)
+
+
+@pytest.mark.parametrize(
+    ("count", "weight", "message"),
+    [(-1, 0, "count must be non-negative"), (3, 2, "at least count = 3")],
+)
+def test_check_region_rejects_impossible_counts(count, weight, message):
+    with pytest.raises(ValueError, match=message):
+        accounting.check_region(count, weight, True, False)
+
+
+@pytest.mark.parametrize(("s1", "s2"), [(-1, 0), (0, -1)])
+def test_protected_region_rejects_negative_gate_counts(s1, s2):
+    with pytest.raises(ValueError, match="must be non-negative"):
+        accounting.protected_region(accounting.ZERO, s1, s2, accounting.ZERO)
+
+
+def test_the_sum_of_no_regions_is_zero():
+    assert accounting.add() == accounting.ZERO
 
 
 def test_gate_counts_split_by_arity_and_skip_identities_and_annotations():
