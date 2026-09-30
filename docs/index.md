@@ -4,6 +4,14 @@ An implementation in [Stim](https://github.com/quantumlib/Stim) of the Clifford 
 
 ```{toctree}
 ---
+caption: Tutorial
+maxdepth: 1
+---
+tutorial/getting-started
+```
+
+```{toctree}
+---
 caption: Explanation
 maxdepth: 1
 ---
