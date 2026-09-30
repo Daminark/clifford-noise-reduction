@@ -325,14 +325,12 @@ def test_gate_overhead_reads_the_options_from_the_estimate():
     """Worked by hand, as the one-chunk example with every option changed.
 
     Idealized checks cost nothing, and a native |+> drops the preparation's
-    Hadamard: protected region 3 + 10, teleportation 4, and 1 more for the
-    frame, so (4 + 13 + 1) / 10 = 1.8.
+    Hadamard: protected region 3 + 10 and teleportation 4, so
+    (4 + 13) / 10 = 1.7.
     """
-    estimate = draw(
-        0, 1000, noisy_checks=False, native_plus=True, noisy_q=True
-    )
+    estimate = draw(0, 1000, noisy_checks=False, native_plus=True)
 
-    assert estimators.gate_overhead(estimate) == pytest.approx(1.8)
+    assert estimators.gate_overhead(estimate) == pytest.approx(1.7)
 
 
 def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():

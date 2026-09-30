@@ -105,12 +105,11 @@ def check_regions(
     r=st.integers(0, 3),
     restricted_checks=st.booleans(),
     noisy_checks=st.booleans(),
-    noisy_q=st.booleans(),
     native_plus=st.booleans(),
     seed=st.integers(0, 2**32 - 1),
 )
 def test_regions_count_every_fault_location_the_builder_emits(
-    n, size, t, r, restricted_checks, noisy_checks, noisy_q, native_plus, seed
+    n, size, t, r, restricted_checks, noisy_checks, native_plus, seed
 ):
     circuit = seeded_circuit(n, size, seed)
     drawn, built = build(
@@ -120,7 +119,6 @@ def test_regions_count_every_fault_location_the_builder_emits(
         r,
         restricted_checks,
         noisy_checks=noisy_checks,
-        noisy_q=noisy_q,
         native_plus=native_plus,
     )
     prep = accounting.prep_region(n, native_plus)
@@ -135,8 +133,6 @@ def test_regions_count_every_fault_location_the_builder_emits(
     ):
         regions.append(accounting.protected_region(prep, s1, s2, chunk_checks))
         regions.append(accounting.teleport_region(n))
-    if noisy_q:
-        regions.append(accounting.frame_region(n))
 
     assert fault_locations(built) == accounting.add(*regions)
 
@@ -181,22 +177,18 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
         accounting.prep_region(n, native_plus),
         check_regions(drawn, noisy_checks, native_plus),
         [1.0] * t,
-        noisy_q=False,
     )
 
     assert overhead * size == pytest.approx(protocol_operations(built, n))
 
 
-@pytest.mark.parametrize(
-    ("noisy_q", "expected"), [(False, 10.0), (True, 31 / 3)]
-)
-def test_expected_overhead_on_a_hand_worked_chunk(noisy_q, expected):
-    """Worked by hand: (26 + 4) / 3 = 10, and 31 / 3 with frame resolution.
+def test_expected_overhead_on_a_hand_worked_chunk():
+    """Worked by hand: (26 + 4) / 3 = 10.
 
     One chunk at n = 1 of two single-qubit gates and one CX, with one
     weight-2 check, accepted half the time.
     Protected region: preparation 4, gates 3, check 6, so 13 per attempt and
-    26 expected; teleportation adds 4 once, and frame resolution 1 more.
+    26 expected; teleportation adds 4 once.
     """
     overhead = accounting.expected_overhead(
         [(2, 1)],
@@ -204,10 +196,9 @@ def test_expected_overhead_on_a_hand_worked_chunk(noisy_q, expected):
         accounting.Region(n1=1, n2=1, nm=0, n_prep=2),
         [accounting.Region(n1=2, n2=2, nm=1, n_prep=1)],
         [0.5],
-        noisy_q,
     )
 
-    assert overhead == pytest.approx(expected)
+    assert overhead == pytest.approx(10.0)
 
 
 def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
@@ -217,7 +208,6 @@ def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
         accounting.ZERO,
         [accounting.ZERO] * 2,
         [0.9, 0.0],
-        noisy_q=False,
     )
 
     assert overhead == math.inf
@@ -226,7 +216,7 @@ def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
 def test_expected_overhead_rejects_chunks_without_gates():
     with pytest.raises(ValueError, match="at least one gate"):
         accounting.expected_overhead(
-            [(0, 0)], 1, accounting.ZERO, [accounting.ZERO], [1.0], False
+            [(0, 0)], 1, accounting.ZERO, [accounting.ZERO], [1.0]
         )
 
 
@@ -238,7 +228,6 @@ def test_expected_overhead_rejects_per_chunk_sequences_of_unequal_length():
             accounting.ZERO,
             [accounting.ZERO],
             [1.0, 1.0],
-            False,
         )
 
 
@@ -246,7 +235,7 @@ def test_expected_overhead_rejects_per_chunk_sequences_of_unequal_length():
 def test_expected_overhead_rejects_an_acceptance_outside_the_unit_interval(q):
     with pytest.raises(ValueError, match=r"must lie in \[0, 1\]"):
         accounting.expected_overhead(
-            [(2, 1)], 1, accounting.ZERO, [accounting.ZERO], [q], False
+            [(2, 1)], 1, accounting.ZERO, [accounting.ZERO], [q]
         )
 
 
@@ -255,7 +244,6 @@ def test_expected_overhead_rejects_an_acceptance_outside_the_unit_interval(q):
     [
         (accounting.prep_region, (0, False)),
         (accounting.teleport_region, (0,)),
-        (accounting.frame_region, (0,)),
     ],
 )
 def test_regions_reject_n_below_one(region, args):

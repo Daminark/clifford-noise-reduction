@@ -137,7 +137,7 @@ class Estimate:
         ``2n`` otherwise.
     chunk_counts : tuple of tuple of (int, int), optional
         Gate counts ``(s1, s2)`` of each chunk, summing to ``(s1, s2)``.
-    noisy_checks, restricted_checks, noisy_q, native_plus : bool, optional
+    noisy_checks, restricted_checks, native_plus : bool, optional
         The options the circuit was built and its checks drawn with, as in
         :func:`estimate_clinr`. The direct implementation keeps the
         defaults.
@@ -163,7 +163,6 @@ class Estimate:
     chunk_counts: tuple[tuple[int, int], ...] = ()
     noisy_checks: bool = True
     restricted_checks: bool = False
-    noisy_q: bool = False
     native_plus: bool = False
 
     def __post_init__(self) -> None:
@@ -311,7 +310,6 @@ def estimate_clinr(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> Estimate:
     """Sample ``CliNR_{t,r}`` applied to ``circuit`` under fresh checks.
@@ -330,7 +328,7 @@ def estimate_clinr(
         Shots to sample. Must be positive.
     rng : numpy.random.Generator
         Source of randomness.
-    noisy_checks, noisy_q, native_plus : bool, optional
+    noisy_checks, native_plus : bool, optional
         As in :func:`clinr.protocol.build_clinr_tr`.
     restricted_checks : bool, optional
         As in :func:`clinr.checks.draw_checks`.
@@ -359,7 +357,6 @@ def estimate_clinr(
         drawn,
         noise,
         noisy_checks=noisy_checks,
-        noisy_q=noisy_q,
         native_plus=native_plus,
     )
     per_chunk_checks = [len(chunk_checks) for chunk_checks in drawn]
@@ -382,7 +379,6 @@ def estimate_clinr(
         chunk_counts,
         noisy_checks=noisy_checks,
         restricted_checks=restricted_checks,
-        noisy_q=noisy_q,
         native_plus=native_plus,
     )
 
@@ -441,7 +437,6 @@ def sweep_clinr(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> list[Estimate]:
     """Return :func:`estimate_clinr` of each of ``circuits``, in order.
@@ -468,7 +463,6 @@ def sweep_clinr(
             rng,
             noisy_checks=noisy_checks,
             restricted_checks=restricted_checks,
-            noisy_q=noisy_q,
             native_plus=native_plus,
         )
         for circuit in circuits
@@ -506,7 +500,6 @@ def _setting(estimate: Estimate) -> dict[str, int | bool]:
         "n": estimate.n,
         "noisy_checks": estimate.noisy_checks,
         "restricted_checks": estimate.restricted_checks,
-        "noisy_q": estimate.noisy_q,
         "native_plus": estimate.native_plus,
     }
 
@@ -684,7 +677,6 @@ def gate_overhead(estimate: Estimate) -> float:
         accounting.prep_region(estimate.n, estimate.native_plus),
         regions,
         [accepted / estimate.shots for accepted in estimate.chunk_accepted],
-        estimate.noisy_q,
     )
 
 

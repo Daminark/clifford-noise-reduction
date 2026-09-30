@@ -7,8 +7,6 @@ numbers for the same circuit.
 
 Per chunk the protocol has four regions: the resource preparation, the
 chunk's own gates, its checks, and the teleportation after the last check.
-Resolving the Pauli frame, when charged, is one further region for the
-whole chain.
 
 References
 ----------
@@ -57,7 +55,6 @@ __all__ = [
     "prep_region",
     "check_region",
     "teleport_region",
-    "frame_region",
     "protected_region",
     "expected_overhead",
 ]
@@ -194,30 +191,6 @@ def teleport_region(n: int) -> Region:
     return Region(n1=n, n2=n, nm=2 * n, n_prep=0)
 
 
-def frame_region(n: int) -> Region:
-    """Return the region of resolving the Pauli frame once, at the end.
-
-    One single-qubit location per data qubit, whether or not that qubit's
-    correction is trivial.
-
-    Parameters
-    ----------
-    n : int
-        Number of data qubits. Must be at least 1.
-
-    Returns
-    -------
-    Region
-
-    Raises
-    ------
-    ValueError
-        If ``n < 1``.
-    """
-    _check_n(n)
-    return Region(n1=n, n2=0, nm=0, n_prep=0)
-
-
 def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
     """Return the region of one attempt at a chunk, through its last check.
 
@@ -254,15 +227,13 @@ def expected_overhead(
     prep: Region,
     check_regions: list[Region],
     acceptance: list[float],
-    noisy_q: bool,
 ) -> float:
     """Return the expected number of operations per gate of the circuit.
 
     Every attempt at chunk ``k`` runs all of its checks, so it costs the
     ``m_k`` operations of its :func:`protected_region`, and the number of
     attempts is geometric with mean ``1 / q_k``. Each chunk also pays its
-    teleportation once, and frame resolution is paid once for the chain when
-    ``noisy_q``. This is Eq. (B4) of [1]_ with the acceptance ``q_k`` in
+    teleportation once. This is Eq. (B4) of [1]_ with the acceptance ``q_k`` in
     place of ``1 - p_res`` and the teleportation's ``4n`` in place of
     ``5n``. The total is divided by the number of gates across the chunks.
 
@@ -280,8 +251,6 @@ def expected_overhead(
         Each chunk's acceptance probability ``q_k``, in chunk order, in
         [0, 1]. Analytic bounds and measured frequencies are both accepted;
         the result is a bound or an estimate accordingly.
-    noisy_q : bool
-        If True, add the frame resolution of :func:`frame_region`.
 
     Returns
     -------
@@ -317,6 +286,4 @@ def expected_overhead(
         if q == 0.0:
             return math.inf
         expected += tail + sum(protected_region(prep, s1, s2, checks)) / q
-    if noisy_q:
-        expected += sum(frame_region(n))
     return expected / size

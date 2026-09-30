@@ -367,27 +367,6 @@ def test_overhead_bound_rejects_a_circuit_without_gates():
         bounds.overhead_bound(stim.Circuit(), 2, 1, 1, UNIFORM)
 
 
-def test_resolving_the_frame_adds_n_single_qubit_locations_once():
-    """Worked by hand at n = 2 and p = 0.01, for any t.
-
-    The logical error rate gains 1 - 0.99^2, and the overhead gains 2
-    operations over the circuit's 4 gates.
-    """
-    circuit = seeded_circuit(2, 4, seed=0)
-
-    for t in (1, 2, 4):
-        free, charged = (
-            bounds.plog_bound(circuit, 2, t, 2, UNIFORM, noisy_q=noisy_q)
-            for noisy_q in (False, True)
-        )
-        cheap, costly = (
-            bounds.overhead_bound(circuit, 2, t, 2, UNIFORM, noisy_q=noisy_q)
-            for noisy_q in (False, True)
-        )
-        assert charged - free == pytest.approx(1 - 0.99**2)
-        assert costly - cheap == pytest.approx(2 / 4)
-
-
 def test_bounds_are_infinite_when_no_attempt_can_succeed():
     circuit = seeded_circuit(2, 10, seed=0)
     certain_fault = noise_models.uniform_noise(1.0)

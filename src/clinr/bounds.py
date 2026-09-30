@@ -11,7 +11,7 @@ They differ from Theorem 1 in what they count, not in how:
 - the exact size of each chunk, where the paper charges every chunk the
   largest;
 - ``4n`` operations to finish a teleportation, where the paper's ``5n``
-  includes the Pauli correction, charged here only under ``noisy_q``;
+  includes applying the Pauli correction, which is tracked here instead;
 - the exact probability that ``r`` checks all miss a damaging fault, and
   the sum over gadgets of the probability that a fault arising in one
   escapes every later check, for whichever family
@@ -146,7 +146,6 @@ def _plog_from_counts(
     n: int,
     family: _Family,
     noisy_checks: bool,
-    noisy_q: bool,
     native_plus: bool,
 ) -> float:
     """Return the sum of the chunk bounds for chunks of these gate counts."""
@@ -155,8 +154,6 @@ def _plog_from_counts(
         total += _chunk_plog_bound(
             noise, n, s1, s2, family, noisy_checks, native_plus
         )
-    if noisy_q:
-        total += _fault_prob(noise, accounting.frame_region(n))
     return total
 
 
@@ -166,7 +163,6 @@ def _overhead_from_counts(
     n: int,
     family: _Family,
     noisy_checks: bool,
-    noisy_q: bool,
     native_plus: bool,
 ) -> float:
     """Return the overhead bound for chunks of these gate counts.
@@ -185,7 +181,7 @@ def _overhead_from_counts(
         for s1, s2 in counts
     ]
     return accounting.expected_overhead(
-        counts, n, prep, [checks] * len(counts), no_fault, noisy_q
+        counts, n, prep, [checks] * len(counts), no_fault
     )
 
 
@@ -198,7 +194,6 @@ def plog_bound(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
     """Bound the logical error rate of ``CliNR_{t,r}`` applied to ``circuit``.
@@ -226,10 +221,6 @@ def plog_bound(
     restricted_checks : bool, optional
         If True, price draws from :func:`clinr.checks.restricted_family`;
         if False, from the full stabilizer group.
-    noisy_q : bool, optional
-        If True, add the ``n`` single-qubit locations of resolving the Pauli
-        frame, after every check, as in
-        :func:`clinr.protocol.build_clinr_tr`.
     native_plus : bool, optional
         If True, price ``|+>`` as one preparation, as in
         :func:`clinr.protocol.build_clinr_tr`.
@@ -253,7 +244,7 @@ def plog_bound(
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _plog_from_counts(
-        counts, noise, n, family, noisy_checks, noisy_q, native_plus
+        counts, noise, n, family, noisy_checks, native_plus
     )
 
 
@@ -266,7 +257,6 @@ def overhead_bound(
     *,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> float:
     """Bound the gate overhead of ``CliNR_{t,r}`` applied to ``circuit``.
@@ -282,7 +272,7 @@ def overhead_bound(
         The Clifford circuit ``C``, as accepted by
         :func:`clinr.protocol.chunk_circuit`, on qubits ``[0, n)``, with at
         least one gate.
-    n, t, r, noise, noisy_checks, restricted_checks, noisy_q, native_plus
+    n, t, r, noise, noisy_checks, restricted_checks, native_plus
         As in :func:`plog_bound`.
 
     Returns
@@ -301,7 +291,7 @@ def overhead_bound(
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _overhead_from_counts(
-        counts, noise, n, family, noisy_checks, noisy_q, native_plus
+        counts, noise, n, family, noisy_checks, native_plus
     )
 
 
@@ -315,7 +305,6 @@ def choose_tr(
     t_max: int | None = None,
     noisy_checks: bool = True,
     restricted_checks: bool = False,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> tuple[int, int]:
     """Return the ``(t, r)`` with the least logical error rate bound.
@@ -341,7 +330,7 @@ def choose_tr(
         Largest number of chunks to try, at least 1. Defaults to the gate
         count of ``circuit``, beyond which chunks are empty and only add
         cost.
-    noisy_checks, restricted_checks, noisy_q, native_plus : bool, optional
+    noisy_checks, restricted_checks, native_plus : bool, optional
         As in :func:`plog_bound`, applied to both bounds.
 
     Returns
@@ -375,7 +364,7 @@ def choose_tr(
         chunks = protocol.chunk_circuit(circuit, n, t)
         counts = [accounting.gate_counts(chunk) for chunk in chunks]
         for r, family in enumerate(families):
-            options = (noise, n, family, noisy_checks, noisy_q, native_plus)
+            options = (noise, n, family, noisy_checks, native_plus)
             if _overhead_from_counts(counts, *options) > max_overhead:
                 continue
             value = _plog_from_counts(counts, *options)

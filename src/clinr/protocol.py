@@ -39,9 +39,10 @@ count them as such:
 2. A preparation error is a flip with probability ``p_prep``, where the
    paper's depolarizing error flips a fresh preparation with probability
    ``2p/3``.
-3. The Pauli correction ``Q`` of Eq. (1) is tracked classically rather than
-   applied, so it is not a fault location, where the paper charges ``n``;
-   ``noisy_q=True`` charges it as one depolarizing layer.
+3. The Pauli correction ``Q`` of Eq. (1) is never applied: it is tracked
+   as a Pauli frame and folded into the observables, so the circuit
+   implements ``C`` up to that frame and ``Q`` is not a fault location,
+   where the paper applies and charges it after every chunk.
 
 References
 ----------
@@ -471,7 +472,6 @@ def build_clinr_tr(
     noise: NoiseModel,
     *,
     noisy_checks: bool = True,
-    noisy_q: bool = False,
     native_plus: bool = False,
 ) -> stim.Circuit:
     """Build ``CliNR_{t,r}(C)`` with the Choi harness.
@@ -498,10 +498,6 @@ def build_clinr_tr(
     noisy_checks : bool, optional
         If True, measure each check with the noisy ancilla gadget; if False,
         with a noiseless ``MPP``.
-    noisy_q : bool, optional
-        If True, charge the Pauli correction as one ``DEPOLARIZE1`` layer at
-        ``p1`` on the output block, after every check, so it never causes a
-        restart. If False, the correction is free.
     native_plus : bool, optional
         If True, prepare every ``|+>`` with one ``RX``, as in
         arXiv:2407.06583, Sec. II, so that a weight-``w`` check costs
@@ -595,12 +591,6 @@ def build_clinr_tr(
         # This chunk's output (b3) is the next chunk's input, and the spent
         # input register becomes the next resource's second half.
         data_in, b3 = b3, data_in
-
-    # Resolving the frame physically applies one Pauli to the output block.
-    # Depolarizing noise is Pauli-symmetric, so its noise is one depolarizing
-    # layer, whichever Pauli the frame holds.
-    if noisy_q and noise.p1 > 0:
-        out.append("DEPOLARIZE1", data_in, noise.p1)
 
     # Choi observables against the full circuit's tableau: all 2n preserved
     # exactly when the implemented channel is C.
