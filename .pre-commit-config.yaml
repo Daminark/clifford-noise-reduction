@@ -24,6 +24,13 @@ repos:
       - id: mdformat
         additional_dependencies: [mdformat-myst==0.3.0]
 
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: rst-backticks
+      - id: rst-directive-colons
+      - id: rst-inline-touching-normal
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
     hooks:

@@ -16,15 +16,22 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    { include-group = "docs" }, # to write and run the notebooks
     "hypothesis>=6.168.3",
-    "ipykernel>=7.3.0",
     "jupyterlab>=4.6.1",
-    "matplotlib>=3.11.0",
+    "jupytext>=1.19.5",
     "mypy>=2.3.1",
-    "nbmake>=1.5.5",
     "pytest>=9",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.8",
+]
+docs = [
+    "furo>=2025.12.19",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.2",
+    "myst-nb>=1.4.0",
+    "numpydoc>=1.11.0",
+    "sphinx>=9.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -89,7 +96,6 @@ number = true                  # number ordered lists 1, 2, 3 in the source
 # Checks of the Scientific Python guide waived on purpose.
 ignore = [
     "PC140", # mypy needs the locked environment, so CI runs it instead
-    "PC170", # no reStructuredText
     "PC901", # PC901 to PC903 configure pre-commit.ci, which is not used:
     "PC902", # CI runs pre-commit itself
     "PC903",

@@ -18,7 +18,7 @@ Add a dependency with `uv add` (or `uv add --dev`) and commit the updated `uv.lo
 The checks are [nox](https://nox.thea.codes) sessions, which CI runs too.
 
 ```bash
-uvx nox                 # lint, typecheck and the fast tests, as on every push
+uvx nox                 # lint, typecheck, the fast tests and the docs, as on every push
 uvx nox -s tests_full   # every test, as on pull requests
 uvx nox -l              # list the sessions
 ```

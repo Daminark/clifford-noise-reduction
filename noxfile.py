@@ -64,5 +64,27 @@ def tests_full(session: nox.Session) -> None:
     )
 
 
+@nox.session
+def docs(session: nox.Session) -> None:
+    """Build the documentation site, failing on any warning.
+
+    Notebooks run as part of the build. The site is written to
+    docs/_build/html.
+    """
+    session.run(
+        "uv",
+        "run",
+        "--locked",
+        "sphinx-build",
+        "--nitpicky",  # warn on every reference that does not resolve
+        "--fail-on-warning",
+        "--builder=html",
+        "docs",
+        "docs/_build/html",
+        *session.posargs,
+        external=True,
+    )
+
+
 if __name__ == "__main__":
     nox.main()

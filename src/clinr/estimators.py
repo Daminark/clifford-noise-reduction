@@ -8,8 +8,8 @@ statistic.
 
 A CliNR shot is accepted when every check of every chunk passes, and the
 logical error rate is taken over accepted shots. This conditioning gives the
-output distribution of the protocol, which re-prepares a rejected resource
-offline and never lets a failed attempt touch the data; the cost of
+output distribution of the protocol of [1]_, which re-prepares a rejected
+resource offline and never lets a failed attempt touch the data; the cost of
 re-preparation appears in :func:`gate_overhead` instead.
 
 One estimate is one draw of the checks, and its shots share those checks.

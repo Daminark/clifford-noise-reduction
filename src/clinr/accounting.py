@@ -5,8 +5,9 @@ kind. :mod:`clinr.bounds` turns a region into a fault probability and
 :mod:`clinr.estimators` into an operation count, so both read the same
 numbers for the same circuit.
 
-Per chunk the protocol has four regions: the resource preparation, the
-chunk's own gates, its checks, and the teleportation after the last check.
+Per chunk the protocol of [1]_ has four regions: the resource preparation,
+the chunk's own gates, its checks, and the teleportation after the last
+check.
 
 References
 ----------
@@ -45,6 +46,7 @@ class Region(NamedTuple):
     n_prep: int
 
 
+#: The empty region, which :func:`add` returns for no regions.
 ZERO = Region(0, 0, 0, 0)
 
 __all__ = [
@@ -171,7 +173,7 @@ def teleport_region(n: int) -> Region:
 
     ``n`` ``CX``, ``n`` Hadamards and ``2n`` measurements: the ``4n`` of the
     paper's ``5n`` that remain when the Pauli correction is tracked
-    classically ([1]_, proof of Lemma 1).
+    classically (arXiv:2407.06583, proof of Lemma 1).
 
     Parameters
     ----------
@@ -233,9 +235,10 @@ def expected_overhead(
     Every attempt at chunk ``k`` runs all of its checks, so it costs the
     ``m_k`` operations of its :func:`protected_region`, and the number of
     attempts is geometric with mean ``1 / q_k``. Each chunk also pays its
-    teleportation once. This is Eq. (B4) of [1]_ with the acceptance ``q_k`` in
-    place of ``1 - p_res`` and the teleportation's ``4n`` in place of
-    ``5n``. The total is divided by the number of gates across the chunks.
+    teleportation once. This is Eq. (B4) of arXiv:2407.06583 with the
+    acceptance ``q_k`` in place of ``1 - p_res`` and the teleportation's
+    ``4n`` in place of ``5n``. The total is divided by the number of gates
+    across the chunks.
 
     Parameters
     ----------
