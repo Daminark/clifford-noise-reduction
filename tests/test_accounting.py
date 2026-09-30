@@ -25,7 +25,7 @@ def seeded_circuit(n: int, size: int, seed: int) -> stim.Circuit:
 def fault_locations(built: stim.Circuit) -> accounting.Region:
     """Count the noisy operations in ``built``, by kind, from its channels."""
     n1 = n2 = nm = n_prep = 0
-    for inst in built.flattened():
+    for inst in built.flattened():  # type: ignore[attr-defined]  # stubs omit iteration
         targets = len(inst.targets_copy())
         args = inst.gate_args_copy()
         if inst.name == "DEPOLARIZE1":
@@ -52,7 +52,7 @@ def protocol_operations(built: stim.Circuit, n: int) -> int:
     """
     reference = set(range(3 * n, 4 * n))
     count = 0
-    for inst in built.flattened():
+    for inst in built.flattened():  # type: ignore[attr-defined]  # stubs omit iteration
         if inst.name in NOISE_CHANNELS | ANNOTATIONS or inst.name == "MPP":
             continue
         targets = [target.value for target in inst.targets_copy()]
@@ -63,7 +63,14 @@ def protocol_operations(built: stim.Circuit, n: int) -> int:
     return count
 
 
-def build(circuit, n, t, r, restricted_checks, **flags):
+def build(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    restricted_checks: bool,
+    **flags: bool,
+) -> tuple[list[list[stim.PauliString]], stim.Circuit]:
     """Draw checks and build ``CliNR_{t,r}``; return the checks and circuit."""
     drawn = checks.draw_checks(
         circuit, n, t, r, np.random.default_rng(1),
@@ -72,7 +79,9 @@ def build(circuit, n, t, r, restricted_checks, **flags):
     return drawn, protocol.build_clinr_tr(circuit, n, drawn, NOISE, **flags)
 
 
-def check_regions(drawn, noisy_checks, native_plus):
+def check_regions(
+    drawn: list[list[stim.PauliString]], noisy_checks: bool, native_plus: bool
+) -> list[accounting.Region]:
     """Return each chunk's check region, charged at the drawn weights."""
     return [
         accounting.check_region(

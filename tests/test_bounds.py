@@ -28,7 +28,7 @@ def paper_plog(n: int, s: int, t: int, r: int, p: float) -> float:
     """Return Theorem 1's logical error bound, arXiv:2407.06583 Eq. (2)."""
     s0 = -(-s // t)
     m0 = 3 * n + s0 + (2 * n + 3) * r
-    numerator = g(p, 3 * n + s0) * 2**-r + 2 * g(p, 2 * n + 3) + g(p, 5 * n)
+    numerator = g(p, 3 * n + s0) * 2.0**-r + 2 * g(p, 2 * n + 3) + g(p, 5 * n)
     return t * numerator / (1 - p) ** m0
 
 
@@ -269,7 +269,7 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
         <= max_overhead
     ]
 
-    def choose():
+    def choose() -> tuple[int, int]:
         return bounds.choose_tr(
             circuit, n, noise, max_overhead=max_overhead, r_max=r_max,
             t_max=t_max, **options,
@@ -281,7 +281,9 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
         return
     best = min(
         feasible,
-        key=lambda tr: bounds.plog_bound(circuit, n, *tr, noise, **options),
+        key=lambda tr: bounds.plog_bound(
+            circuit, n, tr[0], tr[1], noise, **options
+        ),
     )
 
     assert choose() == best

@@ -206,7 +206,11 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
 def test_draw_checks_rejects_a_legacy_random_state(restricted_checks):
     with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
         checks.draw_checks(
-            seeded_circuit(2, 5, seed=0), 2, 1, 2, np.random.RandomState(0),
+            seeded_circuit(2, 5, seed=0),
+            2,
+            1,
+            2,
+            np.random.RandomState(0),  # type: ignore[arg-type]
             restricted_checks=restricted_checks,
         )
 

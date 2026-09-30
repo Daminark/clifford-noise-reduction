@@ -1,6 +1,7 @@
 """Tests for the Monte Carlo estimators in ``clinr.estimators``."""
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -25,7 +26,7 @@ def draw(errors: int, accepted: int, **fields) -> estimators.Estimate:
 
     ``chunk_accepted`` defaults to ``accepted``; any field can be overridden.
     """
-    values = {
+    values: dict[str, Any] = {
         "shots": 1000,
         "accepted": accepted,
         "errors": errors,
@@ -233,9 +234,13 @@ def test_estimates_reject_a_legacy_random_state(estimate):
 
     with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
         if estimate == "clinr":
-            estimators.estimate_clinr(circuit, 2, 1, 1, NOISELESS, 10, rng)
+            estimators.estimate_clinr(
+                circuit, 2, 1, 1, NOISELESS, 10, rng  # type: ignore[arg-type]
+            )
         else:
-            estimators.estimate_direct(circuit, 2, NOISELESS, 10, rng)
+            estimators.estimate_direct(
+                circuit, 2, NOISELESS, 10, rng  # type: ignore[arg-type]
+            )
 
 
 @pytest.mark.parametrize("sweep", ["clinr", "direct"])

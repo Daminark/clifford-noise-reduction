@@ -20,6 +20,7 @@ dev = [
     "ipykernel>=7.3.0",
     "jupyterlab>=4.6.1",
     "matplotlib>=3.11.0",
+    "mypy>=2.3.1",
     "nbmake>=1.5.5",
     "pytest>=9",
     "pytest-cov>=7.1.0",
@@ -50,6 +51,30 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+# Tests are checked but need not be annotated; the package must be.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "clinr.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+# Stim ships stubs (__init__.pyi) without a py.typed marker; read them anyway.
+[[tool.mypy.overrides]]
+module = "stim"
+follow_untyped_imports = true
+
+# SciPy ships no type information; stubs exist as the separate scipy-stubs.
+[[tool.mypy.overrides]]
+module = "scipy.*"
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 79

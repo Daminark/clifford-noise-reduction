@@ -47,7 +47,9 @@ def test_random_gate_sequence_rejects_invalid_sizes(n, size, message):
 
 def test_random_gate_sequence_rejects_a_legacy_random_state():
     with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
-        circuits.random_gate_sequence(2, 5, np.random.RandomState(0))
+        circuits.random_gate_sequence(
+            2, 5, np.random.RandomState(0)  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.parametrize("n", [1, 2, 5])

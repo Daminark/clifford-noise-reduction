@@ -73,7 +73,7 @@ _IDENTITY_GATES = frozenset({"I", "II"})
 
 def _is_two_qubit(name: str) -> bool:
     """Return whether Stim's gate data marks ``name`` as a two-qubit gate."""
-    return stim.gate_data(name).is_two_qubit_gate
+    return bool(stim.gate_data(name).is_two_qubit_gate)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +161,8 @@ def gate_list(circuit: stim.Circuit) -> list[tuple[str, list[int]]]:
         other than a qubit.
     """
     gates: list[tuple[str, list[int]]] = []
-    for inst in circuit.flattened():
+    # Circuit iterates through __getitem__, which Stim's stubs do not model.
+    for inst in circuit.flattened():  # type: ignore[attr-defined]
         if inst.name in _IDENTITY_GATES:
             continue
         data = stim.gate_data(inst.name)
@@ -609,10 +610,10 @@ def build_clinr_tr(
         out.append("MPP", _pauli_to_mpp_targets(gen))
         # The generator's output-block part, in logical indexing.
         conj = stim.PauliString([gen[q] for q in data_in])
-        targets = [stim.target_rec(-1)]
+        records = [stim.target_rec(-1)]
         for index, pauli in frame.items():
             if not pauli.commutes(conj):
-                targets.append(stim.target_rec(index - out.num_measurements))
-        out.append("OBSERVABLE_INCLUDE", targets, observable)
+                records.append(stim.target_rec(index - out.num_measurements))
+        out.append("OBSERVABLE_INCLUDE", records, observable)
 
     return out
