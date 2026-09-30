@@ -40,8 +40,10 @@ rng = np.random.default_rng(0)
 C = stim.Circuit()
 for _ in range(60):
     which = rng.integers(3)
-    if which == 0:   C.append("H", [int(rng.integers(n))])
-    elif which == 1: C.append("S", [int(rng.integers(n))])
+    if which == 0:
+        C.append("H", [int(rng.integers(n))])
+    elif which == 1:
+        C.append("S", [int(rng.integers(n))])
     else:
         a, b = rng.choice(n, 2, replace=False)
         C.append("CX", [int(a), int(b)])

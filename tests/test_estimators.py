@@ -164,8 +164,14 @@ def test_estimate_at_zero_noise_accepts_every_shot_without_error(
     n, size, t, r, restricted_checks, seed
 ):
     estimate = estimators.estimate_clinr(
-        seeded_circuit(n, size, seed), n, t, r, NOISELESS, 200,
-        np.random.default_rng(seed), restricted_checks=restricted_checks,
+        seeded_circuit(n, size, seed),
+        n,
+        t,
+        r,
+        NOISELESS,
+        200,
+        np.random.default_rng(seed),
+        restricted_checks=restricted_checks,
     )
 
     assert (estimate.accepted, estimate.errors) == (200, 0)
@@ -185,8 +191,13 @@ def test_each_chunk_records_its_own_acceptance_not_the_joint_one():
     inequality does not fail by chance.
     """
     estimate = estimators.estimate_clinr(
-        seeded_circuit(3, 20, seed=1), 3, 3, 3,
-        noise_models.uniform_noise(2e-3), 20000, np.random.default_rng(2),
+        seeded_circuit(3, 20, seed=1),
+        3,
+        3,
+        3,
+        noise_models.uniform_noise(2e-3),
+        20000,
+        np.random.default_rng(2),
     )
 
     assert all(a > estimate.accepted for a in estimate.chunk_accepted)
@@ -208,7 +219,10 @@ def test_estimate_repeats_for_the_same_seed():
 
 def test_direct_estimate_at_zero_noise_has_no_chunks_and_no_errors():
     estimate = estimators.estimate_direct(
-        seeded_circuit(3, 20, seed=1), 3, NOISELESS, 200,
+        seeded_circuit(3, 20, seed=1),
+        3,
+        NOISELESS,
+        200,
         np.random.default_rng(0),
     )
 
@@ -235,11 +249,21 @@ def test_estimates_reject_a_legacy_random_state(estimate):
     with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
         if estimate == "clinr":
             estimators.estimate_clinr(
-                circuit, 2, 1, 1, NOISELESS, 10, rng  # type: ignore[arg-type]
+                circuit,
+                2,
+                1,
+                1,
+                NOISELESS,
+                10,
+                rng,  # type: ignore[arg-type]
             )
         else:
             estimators.estimate_direct(
-                circuit, 2, NOISELESS, 10, rng  # type: ignore[arg-type]
+                circuit,
+                2,
+                NOISELESS,
+                10,
+                rng,  # type: ignore[arg-type]
             )
 
 
@@ -279,8 +303,12 @@ def test_gate_overhead_charges_each_chunk_its_own_acceptance():
     Charging both chunks the joint acceptance of 0.5 would give 9.2.
     """
     estimate = draw(
-        0, 500, chunk_accepted=(1000, 500), chunk_checks=(2, 2),
-        chunk_weight=(4, 4), chunk_counts=((6, 4), (0, 0)),
+        0,
+        500,
+        chunk_accepted=(1000, 500),
+        chunk_checks=(2, 2),
+        chunk_weight=(4, 4),
+        chunk_counts=((6, 4), (0, 0)),
     )
 
     assert estimators.gate_overhead(estimate) == pytest.approx(6.6)
@@ -402,10 +430,14 @@ def test_design_effect_is_undefined_when_no_draw_saw_an_error():
     ("draws", "message"),
     [
         ([], "estimates must not be empty"),
-        ([draw(1, 900), draw(1, 900, s1=5, chunk_counts=((5, 4),))],
-         "gate counts disagree"),
-        ([draw(1, 900), draw(1, 900, chunk_checks=(3,))],
-         "checks per chunk disagree"),
+        (
+            [draw(1, 900), draw(1, 900, s1=5, chunk_counts=((5, 4),))],
+            "gate counts disagree",
+        ),
+        (
+            [draw(1, 900), draw(1, 900, chunk_checks=(3,))],
+            "checks per chunk disagree",
+        ),
         ([draw(1, 900), draw(1, 900, noisy_checks=False)], "options disagree"),
         ([draw(1, 900), draw(1, 900, n=2)], "options disagree"),
         ([draw(1, 900), draw(0, 0)], "accepted no shots"),

@@ -119,7 +119,11 @@ def test_draw_checks_draws_stabilizers_of_each_chunks_resource(
     circuit = seeded_circuit(n, size, seed)
 
     drawn = checks.draw_checks(
-        circuit, n, t, r, np.random.default_rng(seed),
+        circuit,
+        n,
+        t,
+        r,
+        np.random.default_rng(seed),
         restricted_checks=restricted_checks,
     )
 
@@ -186,7 +190,11 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     circuit = seeded_circuit(n, 20, seed=5)
     q = 1 - 2 / (3 * n) if restricted_checks else 7 / 15
     (drawn,) = checks.draw_checks(
-        circuit, n, 1, draws, np.random.default_rng(7),
+        circuit,
+        n,
+        1,
+        draws,
+        np.random.default_rng(7),
         restricted_checks=restricted_checks,
     )
 
@@ -197,9 +205,7 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     triple = sum(triples) / len(triples)
 
     assert abs(single - q) < 5 * math.sqrt(q * (1 - q) / draws)
-    assert abs(triple - q**3) < 5 * math.sqrt(
-        q**3 * (1 - q**3) / len(triples)
-    )
+    assert abs(triple - q**3) < 5 * math.sqrt(q**3 * (1 - q**3) / len(triples))
 
 
 @pytest.mark.parametrize("restricted_checks", [False, True])

@@ -31,10 +31,19 @@ def one_instruction(name: str) -> stim.Circuit:
     fits, which is what a new stim gate should do to this suite.
     """
     shapes = [
-        "{} 0", "{} 0 1", "{}(0.1) 0", "{}(0.1) 0 1", "{} X0", "{}(0.1) X0",
-        "{}(0.1,0.1,0.1) 0", "{}(0.1,0.1,0.1,0.1) 0",
+        "{} 0",
+        "{} 0 1",
+        "{}(0.1) 0",
+        "{}(0.1) 0 1",
+        "{} X0",
+        "{}(0.1) X0",
+        "{}(0.1,0.1,0.1) 0",
+        "{}(0.1,0.1,0.1,0.1) 0",
         "{}(" + ",".join(["0.01"] * 15) + ") 0 1",
-        "{}", "{}(0)", "{}(1)", "{}(1,2) 0",
+        "{}",
+        "{}(0)",
+        "{}(1)",
+        "{}(1,2) 0",
     ]
     for shape in shapes:
         try:
@@ -49,23 +58,27 @@ def one_instruction(name: str) -> stim.Circuit:
 # ---------------------------------------------------------------------------
 GATES = stim.gate_data()
 UNITARY_1Q_2Q = sorted(
-    name for name, data in GATES.items()
+    name
+    for name, data in GATES.items()
     if data.is_unitary
     and (data.is_single_qubit_gate or data.is_two_qubit_gate)
 )
 OPERATIONS = sorted(
-    name for name, data in GATES.items()
+    name
+    for name, data in GATES.items()
     if not data.is_unitary
     and (data.is_noisy_gate or data.produces_measurements or data.is_reset)
 )
 ANNOTATIONS = sorted(
-    name for name, data in GATES.items()
+    name
+    for name, data in GATES.items()
     if not data.is_unitary
     and not (data.is_noisy_gate or data.produces_measurements or data.is_reset)
     and name != "REPEAT"  # a block, not an instruction; tested separately
 )
 OTHER_UNITARIES = sorted(
-    name for name, data in GATES.items()
+    name
+    for name, data in GATES.items()
     if data.is_unitary
     and not (data.is_single_qubit_gate or data.is_two_qubit_gate)
 )
@@ -106,7 +119,11 @@ def test_gate_list_splits_fused_instructions_by_arity():
     circuit = stim.Circuit("CX 0 1 2 3\nH 0 1 2")
 
     assert protocol.gate_list(circuit) == [
-        ("CX", [0, 1]), ("CX", [2, 3]), ("H", [0]), ("H", [1]), ("H", [2]),
+        ("CX", [0, 1]),
+        ("CX", [2, 3]),
+        ("H", [0]),
+        ("H", [1]),
+        ("H", [2]),
     ]
 
 
@@ -254,13 +271,21 @@ def test_clinr_is_exact_at_zero_noise(
     n = 3
     circuit = seeded_circuit(n, 20, seed=7)
     drawn = checks.draw_checks(
-        circuit, n, t, r, np.random.default_rng(11),
+        circuit,
+        n,
+        t,
+        r,
+        np.random.default_rng(11),
         restricted_checks=restricted_checks,
     )
 
     built = protocol.build_clinr_tr(
-        circuit, n, drawn, NOISELESS,
-        noisy_checks=noisy_checks, native_plus=native_plus,
+        circuit,
+        n,
+        drawn,
+        NOISELESS,
+        noisy_checks=noisy_checks,
+        native_plus=native_plus,
     )
 
     assert built.num_detectors == t * r
@@ -281,7 +306,11 @@ def test_clinr_is_exact_at_zero_noise_for_any_circuit(
 ):
     circuit = seeded_circuit(n, size, seed)
     drawn = checks.draw_checks(
-        circuit, n, t, r, np.random.default_rng(seed),
+        circuit,
+        n,
+        t,
+        r,
+        np.random.default_rng(seed),
         restricted_checks=restricted_checks,
     )
 

@@ -180,8 +180,13 @@ def test_idealized_checks_never_make_the_bound_worse(restricted_checks):
     circuit = seeded_circuit(3, 30, seed=2)
     values = [
         bounds.plog_bound(
-            circuit, 3, 1, r, UNIFORM,
-            noisy_checks=False, restricted_checks=restricted_checks,
+            circuit,
+            3,
+            1,
+            r,
+            UNIFORM,
+            noisy_checks=False,
+            restricted_checks=restricted_checks,
         )
         for r in range(10)
     ]
@@ -225,8 +230,15 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
     rng = np.random.default_rng(1000 * n + 100 * t + 10 * r)
     estimates = [
         estimators.estimate_clinr(
-            circuit, n, t, r, noise, shots, rng,
-            restricted_checks=restricted_checks, noisy_checks=noisy_checks,
+            circuit,
+            n,
+            t,
+            r,
+            noise,
+            shots,
+            rng,
+            restricted_checks=restricted_checks,
+            noisy_checks=noisy_checks,
         )
         for _ in range(draws)
     ]
@@ -235,8 +247,13 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
     standard_error = float(np.std(rates, ddof=1)) / math.sqrt(len(rates))
 
     bound = bounds.plog_bound(
-        circuit, n, t, r, noise,
-        restricted_checks=restricted_checks, noisy_checks=noisy_checks,
+        circuit,
+        n,
+        t,
+        r,
+        noise,
+        restricted_checks=restricted_checks,
+        noisy_checks=noisy_checks,
     )
 
     assert mean <= bound + 5 * standard_error
@@ -271,8 +288,13 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
 
     def choose() -> tuple[int, int]:
         return bounds.choose_tr(
-            circuit, n, noise, max_overhead=max_overhead, r_max=r_max,
-            t_max=t_max, **options,
+            circuit,
+            n,
+            noise,
+            max_overhead=max_overhead,
+            r_max=r_max,
+            t_max=t_max,
+            **options,
         )
 
     if not feasible:
@@ -300,8 +322,12 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
 def test_choose_tr_rejects_invalid_search_ranges(n, r_max, t_max, message):
     with pytest.raises(ValueError, match=message):
         bounds.choose_tr(
-            stim.Circuit("CX 0 1"), n, UNIFORM,
-            max_overhead=10.0, r_max=r_max, t_max=t_max,
+            stim.Circuit("CX 0 1"),
+            n,
+            UNIFORM,
+            max_overhead=10.0,
+            r_max=r_max,
+            t_max=t_max,
         )
 
 
@@ -321,8 +347,11 @@ def test_choose_tr_rejects_an_overhead_limit_that_is_not_positive(
 ):
     with pytest.raises(ValueError, match="max_overhead must be positive"):
         bounds.choose_tr(
-            stim.Circuit("CX 0 1"), 2, UNIFORM,
-            max_overhead=max_overhead, r_max=2,
+            stim.Circuit("CX 0 1"),
+            2,
+            UNIFORM,
+            max_overhead=max_overhead,
+            r_max=2,
         )
 
 

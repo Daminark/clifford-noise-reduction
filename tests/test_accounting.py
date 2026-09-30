@@ -73,7 +73,11 @@ def build(
 ) -> tuple[list[list[stim.PauliString]], stim.Circuit]:
     """Draw checks and build ``CliNR_{t,r}``; return the checks and circuit."""
     drawn = checks.draw_checks(
-        circuit, n, t, r, np.random.default_rng(1),
+        circuit,
+        n,
+        t,
+        r,
+        np.random.default_rng(1),
         restricted_checks=restricted_checks,
     )
     return drawn, protocol.build_clinr_tr(circuit, n, drawn, NOISE, **flags)
@@ -107,8 +111,14 @@ def test_regions_count_every_fault_location_the_builder_emits(
 ):
     circuit = seeded_circuit(n, size, seed)
     drawn, built = build(
-        circuit, n, t, r, restricted_checks,
-        noisy_checks=noisy_checks, noisy_q=noisy_q, native_plus=native_plus,
+        circuit,
+        n,
+        t,
+        r,
+        restricted_checks,
+        noisy_checks=noisy_checks,
+        noisy_q=noisy_q,
+        native_plus=native_plus,
     )
     prep = accounting.prep_region(n, native_plus)
     counts = [
@@ -149,8 +159,13 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
     """
     circuit = seeded_circuit(n, size, seed)
     drawn, built = build(
-        circuit, n, t, r, restricted_checks,
-        noisy_checks=noisy_checks, native_plus=native_plus,
+        circuit,
+        n,
+        t,
+        r,
+        restricted_checks,
+        noisy_checks=noisy_checks,
+        native_plus=native_plus,
     )
     counts = [
         accounting.gate_counts(chunk)
@@ -194,8 +209,12 @@ def test_expected_overhead_on_a_hand_worked_chunk(noisy_q, expected):
 
 def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
     overhead = accounting.expected_overhead(
-        [(2, 1), (1, 0)], 1, accounting.ZERO, [accounting.ZERO] * 2,
-        [0.9, 0.0], noisy_q=False,
+        [(2, 1), (1, 0)],
+        1,
+        accounting.ZERO,
+        [accounting.ZERO] * 2,
+        [0.9, 0.0],
+        noisy_q=False,
     )
 
     assert overhead == math.inf
@@ -211,8 +230,12 @@ def test_expected_overhead_rejects_chunks_without_gates():
 def test_expected_overhead_rejects_per_chunk_sequences_of_unequal_length():
     with pytest.raises(ValueError, match="one entry per chunk"):
         accounting.expected_overhead(
-            [(2, 1), (1, 0)], 1, accounting.ZERO, [accounting.ZERO],
-            [1.0, 1.0], False,
+            [(2, 1), (1, 0)],
+            1,
+            accounting.ZERO,
+            [accounting.ZERO],
+            [1.0, 1.0],
+            False,
         )
 
 
