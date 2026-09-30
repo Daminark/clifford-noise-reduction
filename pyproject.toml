@@ -97,7 +97,7 @@ ignore = [
 line-length = 79
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "UP", "D", "NPY", "RUF"]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "PT", "D", "NPY", "RUF"]
 # __all__ mirrors each module's definition order, which is itself ordered
 # by dependency; alphabetising it would lose that.
 ignore = ["RUF022"]

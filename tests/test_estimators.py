@@ -231,51 +231,58 @@ def test_direct_estimate_at_zero_noise_has_no_chunks_and_no_errors():
     assert estimate.chunk_accepted == ()
 
 
-@pytest.mark.parametrize("estimate", ["clinr", "direct"])
-def test_estimates_reject_a_shot_count_below_one(estimate):
+def test_clinr_estimate_rejects_a_shot_count_below_one():
     circuit, rng = seeded_circuit(2, 5, seed=0), np.random.default_rng(0)
 
     with pytest.raises(ValueError, match="shots must be positive"):
-        if estimate == "clinr":
-            estimators.estimate_clinr(circuit, 2, 1, 1, NOISELESS, 0, rng)
-        else:
-            estimators.estimate_direct(circuit, 2, NOISELESS, 0, rng)
+        estimators.estimate_clinr(circuit, 2, 1, 1, NOISELESS, 0, rng)
 
 
-@pytest.mark.parametrize("estimate", ["clinr", "direct"])
-def test_estimates_reject_a_legacy_random_state(estimate):
+def test_direct_estimate_rejects_a_shot_count_below_one():
+    circuit, rng = seeded_circuit(2, 5, seed=0), np.random.default_rng(0)
+
+    with pytest.raises(ValueError, match="shots must be positive"):
+        estimators.estimate_direct(circuit, 2, NOISELESS, 0, rng)
+
+
+def test_clinr_estimate_rejects_a_legacy_random_state():
     circuit, rng = seeded_circuit(2, 5, seed=0), np.random.RandomState(0)
 
     with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
-        if estimate == "clinr":
-            estimators.estimate_clinr(
-                circuit,
-                2,
-                1,
-                1,
-                NOISELESS,
-                10,
-                rng,  # type: ignore[arg-type]
-            )
-        else:
-            estimators.estimate_direct(
-                circuit,
-                2,
-                NOISELESS,
-                10,
-                rng,  # type: ignore[arg-type]
-            )
+        estimators.estimate_clinr(
+            circuit,
+            2,
+            1,
+            1,
+            NOISELESS,
+            10,
+            rng,  # type: ignore[arg-type]
+        )
 
 
-@pytest.mark.parametrize("sweep", ["clinr", "direct"])
-def test_sweeps_reject_an_empty_list_of_circuits(sweep):
-    rng = np.random.default_rng(0)
+def test_direct_estimate_rejects_a_legacy_random_state():
+    circuit, rng = seeded_circuit(2, 5, seed=0), np.random.RandomState(0)
 
+    with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
+        estimators.estimate_direct(
+            circuit,
+            2,
+            NOISELESS,
+            10,
+            rng,  # type: ignore[arg-type]
+        )
+
+
+def test_clinr_sweep_rejects_an_empty_list_of_circuits():
     with pytest.raises(ValueError, match="circuits must not be empty"):
-        if sweep == "clinr":
-            estimators.sweep_clinr([], 2, 1, 1, NOISELESS, 10, rng)
-        else:
-            estimators.sweep_direct([], 2, NOISELESS, 10, rng)
+        estimators.sweep_clinr(
+            [], 2, 1, 1, NOISELESS, 10, np.random.default_rng(0)
+        )
+
+
+def test_direct_sweep_rejects_an_empty_list_of_circuits():
+    with pytest.raises(ValueError, match="circuits must not be empty"):
+        estimators.sweep_direct([], 2, NOISELESS, 10, np.random.default_rng(0))
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +411,8 @@ def test_cluster_interval_of_one_draw_has_undefined_bounds():
     point, lo, hi = estimators.cluster_interval([draw(100, 1000)])
 
     assert point == 0.1
-    assert math.isnan(lo) and math.isnan(hi)
+    assert math.isnan(lo)
+    assert math.isnan(hi)
 
 
 def test_design_effect_compares_between_and_within_draw_variance():
