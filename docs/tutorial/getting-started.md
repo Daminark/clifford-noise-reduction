@@ -82,8 +82,10 @@ print(f"gate overhead: {estimators.gate_overhead(clinr):.2f}")
 The package also bounds both quantities analytically, from the circuit's gate counts alone.
 
 ```{code-cell} python
-print(f"logical error bound: {bounds.plog_bound(circuit, n, 1, 4, noise):.4f}")
-print(f"gate overhead bound: {bounds.overhead_bound(circuit, n, 1, 4, noise):.2f}")
+plog = bounds.plog_bound(circuit, n, 1, 4, noise)
+overhead = bounds.overhead_bound(circuit, n, 1, 4, noise)
+print(f"logical error bound: {plog:.4f}")
+print(f"gate overhead bound: {overhead:.2f}")
 ```
 
 Both bounds sit above what we measured.

@@ -12,6 +12,17 @@ tutorial/getting-started
 
 ```{toctree}
 ---
+caption: How-to guides
+maxdepth: 1
+---
+how-to/own-circuit
+how-to/own-checks
+how-to/repeated-draws
+how-to/random-cliffords
+```
+
+```{toctree}
+---
 caption: Explanation
 maxdepth: 1
 ---
