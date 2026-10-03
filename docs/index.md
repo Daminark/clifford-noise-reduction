@@ -26,6 +26,7 @@ how-to/random-cliffords
 caption: Explanation
 maxdepth: 1
 ---
+explanation/checks-and-bounds
 explanation/decisions
 ```
 
