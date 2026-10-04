@@ -8,6 +8,7 @@ import pytest
 import stim
 from hypothesis import given
 from hypothesis import strategies as st
+from scipy import stats
 
 from clinr import bounds, circuits, estimators, noise_models
 
@@ -292,7 +293,7 @@ def test_direct_sweep_rejects_an_empty_list_of_circuits():
 
 
 # ---------------------------------------------------------------------------
-# gate_overhead and mean_gate_overhead
+# gate_overhead and gate_overhead_over_draws
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(("accepted", "expected"), [(1000, 3.0), (500, 5.6)])
 def test_gate_overhead_on_a_hand_worked_estimate(accepted, expected):
@@ -339,7 +340,7 @@ def test_gate_overhead_reads_the_options_from_the_estimate():
     assert estimators.gate_overhead(estimate) == pytest.approx(2.7)
 
 
-def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():
+def test_kept_gate_overhead_averages_draws_rather_than_pooling_them():
     """Worked by hand: the per-draw overheads are 3.0 and 5.6.
 
     Pooling the counts would give acceptance 0.75 and an overhead of
@@ -347,7 +348,88 @@ def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():
     """
     draws = [draw(0, 1000), draw(0, 500)]
 
-    assert estimators.mean_gate_overhead(draws) == pytest.approx(4.3)
+    point, _, _ = estimators.gate_overhead_over_draws(draws, checks="kept")
+
+    assert point == pytest.approx(4.3)
+
+
+def test_fresh_gate_overhead_averages_acceptance_over_draws_not_shots():
+    """Worked by hand: (4 + 26 / 0.75) / 10 = 3.87.
+
+    Acceptance 1 on 1000 shots and 0.5 on 500 average to 0.75 per draw,
+    where pooling the shots would give 1250 / 1500 and an overhead of 3.52.
+    Each attempt costs 26 operations, as in the one-chunk example.
+    """
+    draws = [draw(0, 1000), draw(0, 250, shots=500)]
+
+    point, _, _ = estimators.gate_overhead_over_draws(draws)
+
+    assert point == pytest.approx((4 + 26 / 0.75) / 10)
+
+
+def test_gate_overhead_over_draws_on_a_hand_worked_pair():
+    """Worked by hand, both readings, with their t intervals.
+
+    The second draw's checks weigh 2 rather than 4, so its attempts cost 24
+    operations against 26, and it accepts half its shots.
+    Fresh: (4 + 25 / 0.75) / 10 = 3.73; the delta-method deviations are
+    (26 / 0.75 - 25 / 0.75 ** 2) / 10 = -44/45 and +44/45, so the standard
+    error is 44/45.
+    Kept: the per-draw overheads 3.0 and (4 + 24 / 0.5) / 10 = 5.2, with
+    mean 4.1 and standard error 1.1.
+    t = 12.706 at one degree of freedom.
+    """
+    draws = [draw(0, 1000), draw(0, 500, chunk_weight=(2,))]
+    t = float(stats.t.ppf(0.975, 1))
+
+    fresh = estimators.gate_overhead_over_draws(draws)
+    kept = estimators.gate_overhead_over_draws(draws, checks="kept")
+
+    fresh_point, kept_point = (4 + 25 / 0.75) / 10, 4.1
+    assert fresh == pytest.approx(
+        (fresh_point, fresh_point - t * 44 / 45, fresh_point + t * 44 / 45)
+    )
+    assert kept == pytest.approx(
+        (kept_point, kept_point - t * 1.1, kept_point + t * 1.1)
+    )
+
+
+@pytest.mark.parametrize("checks", ["fresh", "kept"])
+def test_gate_overhead_over_one_draw_has_undefined_bounds(checks):
+    point, lo, hi = estimators.gate_overhead_over_draws(
+        [draw(0, 1000)], checks=checks
+    )
+
+    assert point == pytest.approx(3.0)
+    assert math.isnan(lo)
+    assert math.isnan(hi)
+
+
+def test_fresh_gate_overhead_counts_a_draw_whose_chunk_accepted_nothing():
+    """Worked by hand: mean acceptance 0.5, so (4 + 26 / 0.5) / 10 = 5.6.
+
+    Under fresh draws such a check set is simply one that never passes; with
+    the checks kept, its overhead is infinite and the reading undefined.
+    """
+    draws = [draw(0, 1000), draw(0, 0)]
+
+    point, _, _ = estimators.gate_overhead_over_draws(draws)
+
+    assert point == pytest.approx(5.6)
+    with pytest.raises(ValueError, match="a chunk accepted no shots"):
+        estimators.gate_overhead_over_draws(draws, checks="kept")
+
+
+def test_fresh_gate_overhead_rejects_a_chunk_that_never_accepted():
+    with pytest.raises(ValueError, match="accepted no shots in any"):
+        estimators.gate_overhead_over_draws([draw(0, 0), draw(0, 0)])
+
+
+def test_gate_overhead_over_draws_rejects_draws_without_chunks():
+    direct = estimators.Estimate(100, 100, 3, 6, 4, 1)
+
+    with pytest.raises(ValueError, match="estimate has no chunks"):
+        estimators.gate_overhead_over_draws([direct, direct])
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
@@ -409,7 +491,7 @@ def test_gate_overhead_rejects_a_chunk_that_accepted_nothing():
 SPREAD = [draw(80, 800), draw(96, 800), draw(112, 800)]
 
 
-def test_cluster_interval_is_a_student_t_interval_on_the_draw_means():
+def test_kept_logical_error_rate_is_a_student_t_interval_on_draw_rates():
     """Worked by hand from rates 0.10, 0.12 and 0.14.
 
     Mean 0.12, standard error 0.02 / sqrt(3), and t = 4.3027 at two degrees
@@ -417,19 +499,58 @@ def test_cluster_interval_is_a_student_t_interval_on_the_draw_means():
     """
     half = 4.302652729749462 * 0.02 / math.sqrt(3)
 
-    assert estimators.cluster_interval(SPREAD) == pytest.approx(
-        (0.12, 0.12 - half, 0.12 + half)
-    )
+    assert estimators.logical_error_rate(
+        SPREAD, checks="kept"
+    ) == pytest.approx((0.12, 0.12 - half, 0.12 + half))
 
 
-def test_cluster_interval_is_clamped_at_zero():
+def test_fresh_logical_error_rate_weights_draws_by_their_acceptance():
+    """Worked by hand, both readings.
+
+    Rates 10/1000 and 40/500, with acceptance 1 and 0.5.
+    Fresh: mean fraction failed 0.025 over mean fraction accepted 0.75,
+    that is 1/30; the delta-method deviations, (0.01 - 1/30 * 1) / 0.75
+    and (0.04 - 1/30 * 0.5) / 0.75, are -7/225 and +7/225, so the standard
+    error is 7/225. Kept: the mean of 0.01 and 0.08, that is 0.045.
+    """
+    draws = [draw(10, 1000), draw(40, 500)]
+    half = float(stats.t.ppf(0.975, 1)) * 7 / 225
+
+    point, _, hi = estimators.logical_error_rate(draws)
+
+    assert (point, hi) == pytest.approx((1 / 30, 1 / 30 + half))
+    assert estimators.logical_error_rate(draws, checks="kept")[
+        0
+    ] == pytest.approx(0.045)
+
+
+def test_fresh_logical_error_rate_counts_a_draw_that_accepted_nothing():
+    """A check set that never passes lowers the mean acceptance only."""
+    draws = [draw(10, 1000), draw(0, 0)]
+
+    point, _, _ = estimators.logical_error_rate(draws)
+
+    assert point == pytest.approx(0.01)
+    with pytest.raises(ValueError, match="accepted no shots"):
+        estimators.logical_error_rate(draws, checks="kept")
+
+
+def test_fresh_logical_error_rate_rejects_draws_that_all_accepted_nothing():
+    with pytest.raises(ValueError, match="no estimate accepted a shot"):
+        estimators.logical_error_rate([draw(0, 0), draw(0, 0)])
+
+
+def test_logical_error_rate_is_clamped_at_zero():
     draws = [draw(10, 1000), draw(20, 1000), draw(30, 1000)]
 
-    assert estimators.cluster_interval(draws)[1] == 0.0
+    assert estimators.logical_error_rate(draws)[1] == 0.0
 
 
-def test_cluster_interval_of_one_draw_has_undefined_bounds():
-    point, lo, hi = estimators.cluster_interval([draw(100, 1000)])
+@pytest.mark.parametrize("checks", ["fresh", "kept"])
+def test_logical_error_rate_of_one_draw_has_undefined_bounds(checks):
+    point, lo, hi = estimators.logical_error_rate(
+        [draw(100, 1000)], checks=checks
+    )
 
     assert point == 0.1
     assert math.isnan(lo)
@@ -469,14 +590,43 @@ def test_design_effect_is_undefined_when_no_draw_saw_an_error():
         ),
         ([draw(1, 900), draw(1, 900, noisy_checks=False)], "options disagree"),
         ([draw(1, 900), draw(1, 900, n=2)], "options disagree"),
-        ([draw(1, 900), draw(0, 0)], "accepted no shots"),
     ],
 )
-def test_statistics_over_draws_reject_incomparable_estimates(draws, message):
+@pytest.mark.parametrize(
+    "statistic",
+    [
+        estimators.logical_error_rate,
+        estimators.gate_overhead_over_draws,
+        estimators.design_effect,
+    ],
+)
+def test_statistics_over_draws_reject_incomparable_estimates(
+    statistic, draws, message
+):
     with pytest.raises(ValueError, match=message):
-        estimators.cluster_interval(draws)
+        statistic(draws)
 
 
-def test_cluster_interval_rejects_a_confidence_outside_the_unit_interval():
+@pytest.mark.parametrize(
+    "statistic",
+    [estimators.logical_error_rate, estimators.gate_overhead_over_draws],
+)
+def test_statistics_over_draws_reject_a_confidence_outside_the_unit_interval(
+    statistic,
+):
     with pytest.raises(ValueError, match="strictly between 0 and 1"):
-        estimators.cluster_interval(SPREAD, 1.5)
+        statistic(SPREAD, 1.5)
+
+
+@pytest.mark.parametrize(
+    "statistic",
+    [estimators.logical_error_rate, estimators.gate_overhead_over_draws],
+)
+def test_statistics_over_draws_reject_an_unknown_checks_option(statistic):
+    with pytest.raises(ValueError, match="'fresh' or 'kept'"):
+        statistic(SPREAD, checks="redrawn")
+
+
+def test_design_effect_rejects_a_draw_that_accepted_nothing():
+    with pytest.raises(ValueError, match="accepted no shots"):
+        estimators.design_effect([draw(1, 900), draw(0, 0)])

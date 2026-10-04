@@ -13,9 +13,11 @@ resource offline and never lets a failed attempt touch the data; the cost of
 re-preparation appears in :func:`gate_overhead` instead.
 
 One estimate is one draw of the checks, and its shots share those checks.
-:func:`cluster_interval`, :func:`design_effect` and
-:func:`mean_gate_overhead` treat draws, not shots, as the unit of
-observation.
+:func:`logical_error_rate`, :func:`gate_overhead_over_draws` and
+:func:`design_effect` treat draws, not shots, as the unit of observation.
+The protocol draws new checks for every attempt, which the first two
+estimate by default from the same draws; they also give the rates with one
+check set kept for every attempt.
 
 References
 ----------
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import stim
@@ -43,9 +46,9 @@ __all__ = [
     "sweep_clinr",
     "sweep_direct",
     "gate_overhead",
-    "cluster_interval",
+    "logical_error_rate",
+    "gate_overhead_over_draws",
     "design_effect",
-    "mean_gate_overhead",
 ]
 
 
@@ -510,9 +513,9 @@ def _setting(estimate: Estimate) -> dict[str, int | bool]:
 def _comparable(estimates: list[Estimate]) -> None:
     """Raise ``ValueError`` unless ``estimates`` are draws for one setting.
 
-    That is: at least one estimate, the same gate counts, checks per chunk,
-    ``n`` and options throughout, and at least one accepted shot each. Shot
-    counts and check weights may differ between draws.
+    That is: at least one estimate, and the same gate counts, checks per
+    chunk, ``n`` and options throughout. Shot counts and check weights may
+    differ between draws.
     """
     if not estimates:
         raise ValueError("estimates must not be empty")
@@ -533,27 +536,66 @@ def _comparable(estimates: list[Estimate]) -> None:
                 f"n or options disagree: {_setting(first)} "
                 f"and {_setting(other)}"
             )
-        if other.accepted == 0:
-            raise ValueError("an estimate accepted no shots")
 
 
-def cluster_interval(
-    estimates: list[Estimate], confidence: float = 0.95
+def _each_accepted(estimates: list[Estimate]) -> None:
+    """Raise ``ValueError`` if some estimate accepted no shots."""
+    if any(estimate.accepted == 0 for estimate in estimates):
+        raise ValueError("an estimate accepted no shots")
+
+
+def _check_checks(checks: str) -> None:
+    """Raise ``ValueError`` unless ``checks`` is ``"fresh"`` or ``"kept"``."""
+    if checks not in ("fresh", "kept"):
+        raise ValueError(f"checks must be 'fresh' or 'kept', got {checks!r}")
+
+
+def _half_width(deviations: list[float], confidence: float) -> float:
+    """Return the Student t half-width from per-draw deviations.
+
+    Each deviation is a draw's first-order contribution to the point
+    estimate; they sum to zero, and their mean square over ``J (J - 1)``
+    estimates its variance. Requires at least two draws.
+    """
+    draws = len(deviations)
+    assert draws >= 2, "a half-width needs at least two draws"
+    variance = sum(d * d for d in deviations) / (draws * (draws - 1))
+    quantile = float(stats.t.ppf((1.0 + confidence) / 2.0, draws - 1))
+    return quantile * math.sqrt(variance)
+
+
+def logical_error_rate(
+    estimates: list[Estimate],
+    confidence: float = 0.95,
+    *,
+    checks: Literal["fresh", "kept"] = "fresh",
 ) -> tuple[float, float, float]:
     """Return ``(point, lo, hi)`` for the logical error rate over draws.
 
-    The point estimate is the mean of the per-draw rates, and the interval
-    the two-sided Student t interval on that mean, clamped to [0, 1]. A
-    Wilson interval on the pooled shots understates the uncertainty whenever
-    draws differ systematically, which :func:`design_effect` measures.
+    With ``checks="fresh"``, the rate of the protocol of arXiv:2407.06583,
+    Sec. III, which draws new checks for every attempt. Check sets that
+    accept more often are then over-represented among accepted attempts,
+    so the point estimate is the mean over draws of the fraction of shots
+    accepted with an error, over the mean of the fraction accepted. With
+    ``checks="kept"``, the rate with one check set kept for every attempt,
+    averaged over check sets: the mean of the per-draw rates. Each draw
+    counts equally, whatever its number of shots.
+
+    The interval is the two-sided Student t interval with one degree of
+    freedom fewer than the number of draws, its variance estimated over the
+    draws by the delta method, so it counts the spread between draws as
+    well as shot noise; clamped to [0, 1].
 
     Parameters
     ----------
     estimates : list of Estimate
         Draws for one setting: the same gate counts, checks per chunk,
-        ``n`` and options, each with at least one accepted shot.
+        ``n`` and options. With ``checks="kept"`` each must have accepted
+        a shot; with ``"fresh"``, at least one.
     confidence : float, optional
         Confidence level, strictly between 0 and 1.
+    checks : {"fresh", "kept"}, optional
+        Whether the checks are redrawn for every attempt or kept.
 
     Returns
     -------
@@ -563,26 +605,34 @@ def cluster_interval(
     Raises
     ------
     ValueError
-        If ``estimates`` is empty, disagree in gate counts, checks per
-        chunk, ``n`` or options, or include one that accepted no shots, or
-        if ``confidence`` is not strictly between 0 and 1.
+        If ``estimates`` is empty or disagree in gate counts, checks per
+        chunk, ``n`` or options; if they accepted too few shots, as above;
+        if ``confidence`` is not strictly between 0 and 1; or if ``checks``
+        is neither ``"fresh"`` nor ``"kept"``.
     """
     _comparable(estimates)
     _check_confidence(confidence)
-    rates = [estimate.p_log for estimate in estimates]
-    point = sum(rates) / len(rates)
-    if len(rates) < 2:
+    _check_checks(checks)
+    if checks == "fresh":
+        if all(estimate.accepted == 0 for estimate in estimates):
+            raise ValueError("no estimate accepted a shot")
+        failed = [estimate.errors / estimate.shots for estimate in estimates]
+        passed = [estimate.accepted / estimate.shots for estimate in estimates]
+        mean_passed = sum(passed) / len(passed)
+        point = sum(failed) / sum(passed)
+        deviations = [
+            (fail - point * accept) / mean_passed
+            for fail, accept in zip(failed, passed, strict=True)
+        ]
+    else:
+        _each_accepted(estimates)
+        rates = [estimate.p_log for estimate in estimates]
+        point = sum(rates) / len(rates)
+        deviations = [rate - point for rate in rates]
+    if len(estimates) < 2:
         return point, math.nan, math.nan
-    df = len(rates) - 1
-    spread = math.sqrt(
-        sum((rate - point) ** 2 for rate in rates) / df / len(rates)
-    )
-    quantile = float(stats.t.ppf((1.0 + confidence) / 2.0, df))
-    return (
-        point,
-        max(0.0, point - quantile * spread),
-        min(1.0, point + quantile * spread),
-    )
+    half = _half_width(deviations, confidence)
+    return point, max(0.0, point - half), min(1.0, point + half)
 
 
 def design_effect(estimates: list[Estimate]) -> float:
@@ -597,7 +647,8 @@ def design_effect(estimates: list[Estimate]) -> float:
     Parameters
     ----------
     estimates : list of Estimate
-        At least two draws, as in :func:`cluster_interval`.
+        At least two draws, as in :func:`logical_error_rate` with
+        ``checks="kept"``.
 
     Returns
     -------
@@ -606,7 +657,8 @@ def design_effect(estimates: list[Estimate]) -> float:
     Raises
     ------
     ValueError
-        On the conditions of :func:`cluster_interval` on ``estimates``, if
+        On the conditions of :func:`logical_error_rate` with
+        ``checks="kept"`` on ``estimates``, if
         fewer than two are given, or if every draw's rate is 0 or 1, which
         makes the within-draw variance zero.
 
@@ -616,6 +668,7 @@ def design_effect(estimates: list[Estimate]) -> float:
     ratio is biased upward when errors are rare.
     """
     _comparable(estimates)
+    _each_accepted(estimates)
     if len(estimates) < 2:
         raise ValueError("design effect needs at least two estimates")
     rates = [estimate.p_log for estimate in estimates]
@@ -631,6 +684,32 @@ def design_effect(estimates: list[Estimate]) -> float:
             "errors, so the within-draw variance is zero"
         )
     return between / within
+
+
+def _check_has_chunks(estimate: Estimate) -> None:
+    """Raise ``ValueError`` if ``estimate`` is of the direct implementation."""
+    if not estimate.chunk_accepted:
+        raise ValueError("estimate has no chunks")
+
+
+def _check_overhead_input(estimate: Estimate) -> None:
+    """Raise ``ValueError`` unless every chunk of ``estimate`` accepted."""
+    _check_has_chunks(estimate)
+    if any(accepted == 0 for accepted in estimate.chunk_accepted):
+        raise ValueError(
+            "a chunk accepted no shots, so its restart probability is "
+            "unmeasurable"
+        )
+
+
+def _check_regions(estimate: Estimate) -> list[accounting.Region]:
+    """Return each chunk's check region at the weights ``estimate`` drew."""
+    return [
+        accounting.check_region(count, weight, estimate.native_plus)
+        for count, weight in zip(
+            estimate.chunk_checks, estimate.chunk_weight, strict=True
+        )
+    ]
 
 
 def gate_overhead(estimate: Estimate) -> float:
@@ -658,51 +737,121 @@ def gate_overhead(estimate: Estimate) -> float:
     ValueError
         If ``estimate`` has no chunks or a chunk accepted no shots.
     """
-    if not estimate.chunk_accepted:
-        raise ValueError("estimate has no chunks")
-    if any(accepted == 0 for accepted in estimate.chunk_accepted):
-        raise ValueError(
-            "a chunk accepted no shots, so its restart probability is "
-            "unmeasurable"
-        )
-
-    regions = [
-        accounting.check_region(count, weight, estimate.native_plus)
-        for count, weight in zip(
-            estimate.chunk_checks, estimate.chunk_weight, strict=True
-        )
-    ]
+    _check_overhead_input(estimate)
     return accounting.expected_overhead(
         list(estimate.chunk_counts),
         estimate.n,
         accounting.prep_region(estimate.n, estimate.native_plus),
-        regions,
+        _check_regions(estimate),
         [accepted / estimate.shots for accepted in estimate.chunk_accepted],
     )
 
 
-def mean_gate_overhead(estimates: list[Estimate]) -> float:
-    """Return the mean of :func:`gate_overhead` over draws.
+def gate_overhead_over_draws(
+    estimates: list[Estimate],
+    confidence: float = 0.95,
+    *,
+    checks: Literal["fresh", "kept"] = "fresh",
+) -> tuple[float, float, float]:
+    """Return ``(point, lo, hi)`` for the gate overhead over draws.
 
-    Each draw counts equally, whatever its number of shots. This is not the
-    overhead of the pooled counts, since each draw has its own check weights
-    and acceptance.
+    With ``checks="fresh"``, the overhead of the protocol of
+    arXiv:2407.06583, Sec. III, which draws new checks for every attempt:
+    its attempts are then independent and identically distributed, so by
+    Wald's identity each chunk costs its teleportation plus the mean over
+    draws of its protected region's operations, divided by the mean over
+    draws of its acceptance. With ``checks="kept"``, the mean over draws of
+    :func:`gate_overhead`, each draw's checks kept for every attempt. Each
+    draw counts equally, whatever its number of shots. The interval is as in
+    :func:`logical_error_rate`, without the clamp.
 
     Parameters
     ----------
     estimates : list of Estimate
-        Draws as in :func:`cluster_interval`, each as in
-        :func:`gate_overhead`.
+        Draws as in :func:`logical_error_rate`, of CliNR rather than the
+        direct implementation. With ``checks="kept"`` every chunk of each
+        must have accepted a shot; with ``"fresh"``, every chunk of at
+        least one.
+    confidence : float, optional
+        Confidence level, strictly between 0 and 1.
+    checks : {"fresh", "kept"}, optional
+        Whether the checks are redrawn for every attempt or kept.
 
     Returns
     -------
-    float
+    tuple of (float, float, float)
+        With a single draw the bounds are ``nan``.
 
     Raises
     ------
     ValueError
-        On the conditions of :func:`cluster_interval` on ``estimates``.
+        On the conditions of :func:`logical_error_rate` other than those on
+        accepted shots, if an estimate has no chunks, or if the chunks
+        accepted too few shots, as above.
     """
     _comparable(estimates)
-    overheads = [gate_overhead(estimate) for estimate in estimates]
-    return sum(overheads) / len(overheads)
+    _check_confidence(confidence)
+    _check_checks(checks)
+    for estimate in estimates:
+        _check_has_chunks(estimate)
+    if checks == "kept":
+        overheads = [gate_overhead(estimate) for estimate in estimates]
+        point = sum(overheads) / len(overheads)
+        deviations = [overhead - point for overhead in overheads]
+    else:
+        first = estimates[0]
+        prep = accounting.prep_region(first.n, first.native_plus)
+        # Each draw's operations per attempt and acceptance, chunk by chunk.
+        operations = [
+            [
+                sum(accounting.protected_region(prep, s1, s2, region))
+                for (s1, s2), region in zip(
+                    estimate.chunk_counts,
+                    _check_regions(estimate),
+                    strict=True,
+                )
+            ]
+            for estimate in estimates
+        ]
+        acceptance = [
+            [accepted / estimate.shots for accepted in estimate.chunk_accepted]
+            for estimate in estimates
+        ]
+        draws, chunks = len(estimates), len(first.chunk_accepted)
+        mean_ops = [
+            sum(row[k] for row in operations) / draws for k in range(chunks)
+        ]
+        mean_acc = [
+            sum(row[k] for row in acceptance) / draws for k in range(chunks)
+        ]
+        if 0.0 in mean_acc:
+            raise ValueError("a chunk accepted no shots in any estimate")
+        # At fixed acceptance the overhead is linear in each chunk's
+        # operation count, so averaging it over the draws averages the
+        # operations.
+        point = (
+            sum(
+                accounting.expected_overhead(
+                    list(estimate.chunk_counts),
+                    estimate.n,
+                    prep,
+                    _check_regions(estimate),
+                    mean_acc,
+                )
+                for estimate in estimates
+            )
+            / draws
+        )
+        size = first.s1 + first.s2
+        deviations = [
+            sum(
+                ops[k] / mean_acc[k] - mean_ops[k] * acc[k] / mean_acc[k] ** 2
+                for k in range(chunks)
+            )
+            / size
+            for ops, acc in zip(operations, acceptance, strict=True)
+        ]
+    if len(estimates) < 2:
+        return point, math.nan, math.nan
+    half = _half_width(deviations, confidence)
+    return point, point - half, point + half

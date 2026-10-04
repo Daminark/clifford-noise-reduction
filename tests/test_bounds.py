@@ -7,6 +7,7 @@ import pytest
 import stim
 from hypothesis import assume, given
 from hypothesis import strategies as st
+from scipy import stats
 
 from clinr import bounds, circuits, estimators, noise_models
 
@@ -215,11 +216,11 @@ SOUNDNESS_CASES = [
 def test_measured_logical_error_rate_never_exceeds_the_bound(
     n, t, r, restricted_checks, noisy_checks, draws, shots
 ):
-    """Mean over random check draws, with 5 standard errors of slack.
+    """The protocol's rate over random check draws, with 5 standard errors.
 
-    The bound covers the protocol, which draws its checks at random, so the
-    measurement averages over draws; one fixed check set may do worse.
-    The standard error is that of the mean of the per-draw rates, so it
+    The bound covers the protocol, which draws new checks for every attempt,
+    so the measurement is the fresh-draw rate over draws; one fixed check
+    set may do worse. Its standard error is taken over the draws, so it
     counts the spread between draws, which dominates, as well as shot noise.
     The slack is at most 10% of the bound in the quick tier (8 draws of 2e4
     shots) and 4% in the precise tier (32 draws of 5e4 shots), so an unsound
@@ -242,9 +243,8 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
         )
         for _ in range(draws)
     ]
-    rates = [estimate.p_log for estimate in estimates]
-    mean = sum(rates) / len(rates)
-    standard_error = float(np.std(rates, ddof=1)) / math.sqrt(len(rates))
+    rate, _, high = estimators.logical_error_rate(estimates)
+    standard_error = (high - rate) / float(stats.t.ppf(0.975, draws - 1))
 
     bound = bounds.plog_bound(
         circuit,
@@ -256,7 +256,7 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
         noisy_checks=noisy_checks,
     )
 
-    assert mean <= bound + 5 * standard_error
+    assert rate <= bound + 5 * standard_error
 
 
 # ---------------------------------------------------------------------------
