@@ -21,12 +21,8 @@ No fault damages the state while commuting with every stabilizer.
 {func}`clinr.checks.draw_checks` draws the `r` checks of a chunk independently, with replacement, from one of two families.
 
 **Uniform over the group.**
-A check is a uniformly random non-identity element of $S$.
-The identity commutes with everything, so of the $2^{2n} - 1$ candidates exactly $2^{2n-1} - 1$ miss a damaging $E$, and one draw misses with probability
-
-$$q = \frac{2^{2n-1} - 1}{2^{2n} - 1},$$
-
-against exactly $1/2$ when the identity is included, as in the paper: $1/3$ at $n = 1$, $31/63$ at $n = 3$.
+A check is a uniformly random element of $S$, the identity included, as in the paper.
+Exactly half of $S$ commutes with a damaging $E$, so one draw misses with probability $q = 1/2$.
 The price is weight: an element of $S$ acts on up to $2n$ qubits, and a weight-$w$ check costs $w$ two-qubit gates.
 
 **Restricted.**
@@ -38,7 +34,7 @@ One draw from the $3n$ therefore misses with probability at most
 $$q = 1 - \frac{2}{3n},$$
 
 and enumerating every Pauli on $2n$ qubits shows the bound is attained at $n = 1, 2, 3$.
-At $n = 1$ the family is the whole group without the identity, and the two values agree; beyond, the restricted miss approaches 1 while the uniform one stays below $1/2$.
+At $n = 1$ the family is the whole group without the identity, with a miss of $1/3$; beyond, the restricted miss approaches 1 while the uniform one stays at $1/2$.
 The paper runs its numerics with this family, while Theorem 1 covers uniform checks only.
 
 ## The bound on the logical error rate
@@ -83,7 +79,6 @@ Ours differ from them as follows:
 - **Four rates**, one per kind of operation, where the paper uses one.
 - **Exact chunk sizes**: each chunk is charged its own gates, where the paper charges every chunk $s_0$.
 - **$4n$ for the teleportation**, where the paper's $5n$ includes $n$ Pauli gates applying the correction; we track the correction as a Pauli frame instead ({doc}`../adr/0002-deliver-the-output-up-to-a-pauli-frame`).
-- **No identity checks**: the identity can never fire but would still cost a gadget, so it is excluded, which lowers the per-draw miss below the paper's $1/2$.
 - **The preparation convention**: by default $|+\rangle$ is a reset and a Hadamard, two operations where the paper counts one; with `native_plus=True` the counts match the paper's.
 - **The restricted family is bounded too**, with the per-draw miss above, where Theorem 1 covers uniform checks only.
 
