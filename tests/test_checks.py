@@ -37,9 +37,9 @@ def unsigned(pauli: stim.PauliString) -> str:
 
 
 def group_elements(gens: list[stim.PauliString]) -> list[stim.PauliString]:
-    """Return every non-identity product of ``gens``."""
+    """Return every product of ``gens``, the identity included."""
     elements = []
-    for mask in range(1, 2 ** len(gens)):
+    for mask in range(2 ** len(gens)):
         product = stim.PauliString(len(gens[0]))
         for bit, gen in enumerate(gens):
             if mask >> bit & 1:
@@ -85,7 +85,7 @@ def test_restricted_family_is_the_propagated_bell_triples(n, size, seed):
 def test_worst_case_per_draw_miss_is_the_constant_the_bounds_use(n):
     _, gens, family = resource(seeded_circuit(n, 25, seed=n), n)
     group = group_elements(gens)
-    uniform_miss = (2 ** (2 * n - 1) - 1) / (2 ** (2 * n) - 1)
+    uniform_miss = 1 / 2
     restricted_miss = 1 - 2 / (3 * n)
 
     worst_restricted = 0.0
@@ -99,7 +99,7 @@ def test_worst_case_per_draw_miss_is_the_constant_the_bounds_use(n):
         restricted = sum(fault.commutes(element) for element in family) / len(
             family
         )
-        # Half the group anticommutes, and the identity is never drawn.
+        # Half the group anticommutes, the identity among the other half.
         assert uniform == pytest.approx(uniform_miss)
         worst_restricted = max(worst_restricted, restricted)
 
@@ -140,14 +140,13 @@ def test_draw_checks_draws_stabilizers_of_each_chunks_resource(
         assert len(chunk_checks) == r
         for check in chunk_checks:
             assert len(check) == 2 * n
-            assert check.weight > 0
             assert all(check.commutes(gen) for gen in gens)
             if restricted_checks:
                 assert unsigned(check) in allowed
 
 
 @pytest.mark.parametrize("n", [1, 2])
-def test_uniform_checks_are_uniform_over_the_non_identity_elements(n):
+def test_uniform_checks_are_uniform_over_the_group(n):
     """Chi-square test at p > 1e-6, about a five-sigma departure.
 
     With 1000 expected draws per element, an element never drawn, or drawn
@@ -155,7 +154,7 @@ def test_uniform_checks_are_uniform_over_the_non_identity_elements(n):
     """
     circuit = seeded_circuit(n, 20, seed=n)
     _, gens, _ = resource(circuit, n)
-    draws = 1000 * (4**n - 1)
+    draws = 1000 * 4**n
 
     (drawn,) = checks.draw_checks(
         circuit, n, 1, draws, np.random.default_rng(0)
@@ -185,14 +184,14 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     """Five-sigma binomial bounds on single draws and on triples.
 
     At 30000 draws, 5 sigma on the single-draw rate is about 0.014, well
-    inside the gap of 0.033 between 7/15 and the 1/2 a sampler that could
-    return the identity would give.
+    inside the gap of 0.033 between 1/2 and the 7/15 a sampler that redrew
+    the identity would give.
     The triple rate q**3, at about 0.015 for 5 sigma, checks independence:
     a sampler that reused draws would miss triples at a rate nearer q**2.
     """
     n, draws = 2, 30000
     circuit = seeded_circuit(n, 20, seed=5)
-    q = 1 - 2 / (3 * n) if restricted_checks else 7 / 15
+    q = 1 - 2 / (3 * n) if restricted_checks else 1 / 2
     (drawn,) = checks.draw_checks(
         circuit,
         n,

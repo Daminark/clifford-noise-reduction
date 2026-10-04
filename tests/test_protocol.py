@@ -350,12 +350,15 @@ def test_builder_rejects_a_check_of_the_wrong_length():
         protocol.build_clinr_tr(circuit, 2, drawn, NOISELESS)
 
 
-def test_builder_rejects_the_identity_as_a_check():
+def test_builder_measures_the_identity_as_a_check_that_never_fires():
+    """Stim builds a detector error model only if every detector is fixed."""
     circuit = seeded_circuit(2, 10, seed=3)
     drawn = [[stim.PauliString(4)]]
 
-    with pytest.raises(ValueError, match="is the identity"):
-        protocol.build_clinr_tr(circuit, 2, drawn, NOISELESS)
+    built = protocol.build_clinr_tr(circuit, 2, drawn, NOISELESS)
+
+    assert built.num_detectors == 1
+    assert built.detector_error_model().num_errors == 0
 
 
 def test_builder_rejects_a_check_that_does_not_stabilize_the_resource():

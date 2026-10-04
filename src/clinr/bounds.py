@@ -12,11 +12,10 @@ They differ from Theorem 1 in what they count, not in how:
   largest;
 - ``4n`` operations to finish a teleportation, where the paper's ``5n``
   includes applying the Pauli correction, which is tracked here instead;
-- the exact probability that ``r`` checks all miss a damaging fault, and
-  the sum over gadgets of the probability that a fault arising in one
-  escapes every later check, for whichever family
-  :func:`clinr.checks.draw_checks` draws from, where the paper has ``2^-r``
-  and ``2``.
+- the probability that ``r`` checks all miss a damaging fault, and the sum
+  over gadgets of the probability that a fault arising in one escapes every
+  later check, for whichever family :func:`clinr.checks.draw_checks` draws
+  from, where the paper has ``2^-r`` and ``2`` for the full group.
 
 References
 ----------
@@ -88,8 +87,8 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
     """Return the :class:`_Family` of ``r`` draws from the chosen family.
 
     The per-draw worst-case miss ``q`` is ``1 - 2/(3n)`` for the restricted
-    family and ``(2^(2n-1) - 1)/(2^(2n) - 1)`` for the full group without
-    the identity; ``miss = q^r`` and ``escapes = 1 + q + ... + q^(r-1)``.
+    family and ``1/2`` for the full group, identity included; ``miss = q^r``
+    and ``escapes = 1 + q + ... + q^(r-1)``.
     Requires ``n >= 1`` and ``r >= 0``.
     """
     # Exact for what draw_checks samples. The draws are independent, so the
@@ -99,7 +98,7 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
         q = (3 * n - 2) / (3 * n)
         weight = n + 1
     else:
-        q = (2 ** (2 * n - 1) - 1) / (2 ** (2 * n) - 1)
+        q = 0.5
         weight = 2 * n
     miss, escapes = 1.0, 0.0
     for _ in range(r):

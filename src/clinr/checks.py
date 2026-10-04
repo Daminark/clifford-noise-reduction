@@ -1,9 +1,9 @@
 """Choosing which stabilizers of a chunk's resource state to measure.
 
 The ``r`` checks of a chunk are drawn independently and identically, with
-replacement, from one of two families: the non-identity elements of the full
-stabilizer group, whose weight is at most ``2n``, as the proof of Theorem 1
-of [1]_ assumes; or the restricted family of [1]_, Sec. V, the ``3n``
+replacement, from one of two families: the full stabilizer group, identity
+included, whose elements have weight at most ``2n``, as the proof of
+Theorem 1 of [1]_ assumes; or the restricted family of [1]_, Sec. V, the ``3n``
 stabilizers propagated from the Bell pairs, whose weight is at most
 ``n + 1``. :mod:`clinr.protocol` measures the checks and :mod:`clinr.bounds`
 prices what each family detects.
@@ -89,11 +89,9 @@ def draw_checks(
         Source of randomness, drawn from in chunk order.
     restricted_checks : bool, optional
         If True, draw uniformly from :func:`restricted_family`. If False,
-        draw uniformly from the non-identity elements of the full
-        stabilizer group: each generator of
-        :func:`clinr.protocol.stabilizer_gens` enters the product with
-        probability 1/2, which is uniform over the group, and the identity
-        is redrawn.
+        draw uniformly from the full stabilizer group, identity included:
+        each generator of :func:`clinr.protocol.stabilizer_gens` enters the
+        product with probability 1/2.
 
     Returns
     -------
@@ -128,14 +126,13 @@ def draw_checks(
             continue
         gens = protocol.stabilizer_gens(tableau, bare, image, 2 * n)
         chunk_checks: list[stim.PauliString] = []
-        while len(chunk_checks) < r:
+        for _ in range(r):
             product = stim.PauliString(2 * n)
             for keep, gen in zip(
                 rng.random(len(gens)) < 0.5, gens, strict=True
             ):
                 if keep:
                     product *= gen
-            if product.weight > 0:
-                chunk_checks.append(product)
+            chunk_checks.append(product)
         checks.append(chunk_checks)
     return checks

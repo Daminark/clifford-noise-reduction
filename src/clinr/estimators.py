@@ -131,10 +131,11 @@ class Estimate:
     chunk_checks : tuple of int, optional
         Checks measured in each chunk.
     chunk_weight : tuple of int, optional
-        Total weight of each chunk's checks: at least its number of checks,
-        since no check is the identity, and at most that number times the
-        family's worst-case weight, ``n + 1`` if ``restricted_checks`` and
-        ``2n`` otherwise.
+        Total weight of each chunk's checks: at most its number of checks
+        times the family's worst-case weight, ``n + 1`` if
+        ``restricted_checks`` and ``2n`` otherwise, and at least its number
+        of checks if ``restricted_checks``, since that family excludes the
+        identity.
     chunk_counts : tuple of tuple of (int, int), optional
         Gate counts ``(s1, s2)`` of each chunk, summing to ``(s1, s2)``.
     noisy_checks, restricted_checks, native_plus : bool, optional
@@ -211,16 +212,18 @@ class Estimate:
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
             )
-        worst = self.n + 1 if self.restricted_checks else 2 * self.n
+        least, worst = (
+            (1, self.n + 1) if self.restricted_checks else (0, 2 * self.n)
+        )
         if any(
-            not checks <= weight <= checks * worst
+            not least * checks <= weight <= worst * checks
             for weight, checks in zip(
                 self.chunk_weight, self.chunk_checks, strict=False
             )
         ):
             raise ValueError(
-                "each chunk's check weight must lie between its number of "
-                f"checks and {worst} times it, got weights "
+                f"each chunk's check weight must lie between {least} and "
+                f"{worst} times its number of checks, got weights "
                 f"{self.chunk_weight} for checks {self.chunk_checks}"
             )
         lengths = {

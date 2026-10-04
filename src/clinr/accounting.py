@@ -136,8 +136,7 @@ def check_region(count: int, weight: int, native_plus: bool) -> Region:
     count : int
         Number of checks. Must be non-negative.
     weight : int
-        Their total weight. Must be at least ``count``, since no check is
-        the identity.
+        Their total weight. Must be non-negative.
     native_plus : bool
 
     Returns
@@ -147,14 +146,12 @@ def check_region(count: int, weight: int, native_plus: bool) -> Region:
     Raises
     ------
     ValueError
-        If ``count`` is negative or ``weight`` is less than ``count``.
+        If ``count`` or ``weight`` is negative.
     """
     if count < 0:
         raise ValueError(f"count must be non-negative, got {count}")
-    if weight < count:
-        raise ValueError(
-            f"weight must be at least count = {count}, got {weight}"
-        )
+    if weight < 0:
+        raise ValueError(f"weight must be non-negative, got {weight}")
     return Region(
         n1=(1 if native_plus else 2) * count,
         n2=weight,

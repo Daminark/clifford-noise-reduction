@@ -495,8 +495,8 @@ def build_clinr_tr(
         One list of ``r`` checks per chunk, the same ``r`` for every chunk,
         laid out as :func:`clinr.checks.draw_checks` returns them: length
         ``2n``, the bare half on ``[0, n)`` and the half carrying the chunk
-        on ``[n, 2n)``. Each must be a non-identity stabilizer of its
-        chunk's resource state. There must be at least one chunk.
+        on ``[n, 2n)``. Each must be a stabilizer of its chunk's resource
+        state; the identity is allowed. There must be at least one chunk.
     noise : NoiseModel
     noisy_checks : bool, optional
         If True, measure each check with the noisy ancilla gadget; if False,
@@ -519,8 +519,8 @@ def build_clinr_tr(
     ------
     ValueError
         If the chunks have different numbers of checks, or if a check does
-        not have length ``2n``, is the identity, or does not stabilize its
-        chunk's resource state.
+        not have length ``2n`` or does not stabilize its chunk's resource
+        state.
     """
     if len({len(chunk_checks) for chunk_checks in checks}) > 1:
         raise ValueError(
@@ -553,8 +553,6 @@ def build_clinr_tr(
                     f"chunk {k}: check has length {len(check)}, "
                     f"expected {2 * n}"
                 )
-            if check.weight == 0:
-                raise ValueError(f"chunk {k}: check is the identity")
             if not all(check.commutes(gen) for gen in gens):
                 raise ValueError(
                     f"chunk {k}: check {check} does not stabilize the resource"

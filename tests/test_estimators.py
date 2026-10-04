@@ -122,11 +122,14 @@ def test_wilson_interval_rejects_invalid_arguments(
         ({"chunk_accepted": (899,)}, "every chunk accepts at least"),
         ({"chunk_checks": (2, 2)}, "disagree in length"),
         ({"chunk_counts": ((6, 3),)}, "chunk gate counts sum to"),
-        ({"chunk_weight": (1,)}, "between its number of checks and 2"),
-        ({"chunk_weight": (5,)}, "between its number of checks and 2"),
+        ({"chunk_weight": (5,)}, "between 0 and 2 times"),
+        (
+            {"n": 2, "restricted_checks": True, "chunk_weight": (1,)},
+            "between 1 and 3 times",
+        ),
         (
             {"n": 2, "restricted_checks": True, "chunk_weight": (7,)},
-            "between its number of checks and 3",
+            "between 1 and 3 times",
         ),
     ],
 )
@@ -178,9 +181,12 @@ def test_estimate_at_zero_noise_accepts_every_shot_without_error(
     assert estimate.chunk_accepted == (200,) * t
     assert estimate.chunk_checks == (r,) * t
     assert estimate.size == size
-    # Every check has weight between 1 and its family's worst case.
-    worst = n + 1 if restricted_checks else 2 * n
-    assert all(r <= weight <= r * worst for weight in estimate.chunk_weight)
+    # Every check weighs at most its family's worst case, and a restricted
+    # check at least 1, since only the full group contains the identity.
+    least, worst = (1, n + 1) if restricted_checks else (0, 2 * n)
+    assert all(
+        least * r <= weight <= worst * r for weight in estimate.chunk_weight
+    )
 
 
 def test_each_chunk_records_its_own_acceptance_not_the_joint_one():
@@ -349,8 +355,6 @@ def test_gate_overhead_at_zero_noise_is_at_most_the_bound(n):
     """With certain acceptance only the check weights differ.
 
     The estimate charges the drawn weight and the bound the worst case.
-    At n = 1 every non-identity stabilizer has weight 2 = 2n, so the two
-    coincide.
     """
     circuit = seeded_circuit(n, 20, seed=n)
     estimate = estimators.estimate_clinr(
@@ -360,10 +364,29 @@ def test_gate_overhead_at_zero_noise_is_at_most_the_bound(n):
     measured = estimators.gate_overhead(estimate)
     bound = bounds.overhead_bound(circuit, n, 2, 3, NOISELESS)
 
-    if n == 1:
-        assert measured == pytest.approx(bound)
-    else:
-        assert measured <= bound
+    assert measured <= bound
+
+
+def test_gate_overhead_at_zero_noise_meets_the_bound_at_worst_case_weight():
+    """At n = 1 every restricted check has weight 2 = n + 1, the worst case."""
+    circuit = seeded_circuit(1, 20, seed=1)
+    estimate = estimators.estimate_clinr(
+        circuit,
+        1,
+        2,
+        3,
+        NOISELESS,
+        100,
+        np.random.default_rng(1),
+        restricted_checks=True,
+    )
+
+    measured = estimators.gate_overhead(estimate)
+    bound = bounds.overhead_bound(
+        circuit, 1, 2, 3, NOISELESS, restricted_checks=True
+    )
+
+    assert measured == pytest.approx(bound)
 
 
 def test_gate_overhead_rejects_an_estimate_without_chunks():

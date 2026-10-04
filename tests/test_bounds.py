@@ -90,12 +90,12 @@ def test_bounds_on_a_hand_worked_uniform_example():
     """Worked by hand at n = 1, C = H, t = 1 and r = 2 uniform checks.
 
     Worst-case check weight 2n = 2.
-    Per-draw miss (2^1 - 1)/(2^2 - 1) = 1/3: miss 1/9, escapes 1 + 1/3.
+    Per-draw miss 1/2, the identity included: miss 1/4, escapes 1 + 1/2.
     Locations: preparation 4 (2 resets, H, CX), resource with C 5, one
     check gadget 6, teleportation 4, protected region 4 + 1 + 12 = 17.
     """
     circuit = stim.Circuit("H 0")
-    plog = (g(P, 5) / 9 + g(P, 6) * 4 / 3 + g(P, 4)) / (1 - P) ** 17
+    plog = (g(P, 5) / 4 + g(P, 6) * 3 / 2 + g(P, 4)) / (1 - P) ** 17
     overhead = (4 + 17 / (1 - P) ** 17) / 1
 
     assert bounds.plog_bound(circuit, 1, 1, 2, UNIFORM) == pytest.approx(plog)

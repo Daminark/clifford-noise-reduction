@@ -252,7 +252,10 @@ def test_regions_reject_n_below_one(region, args):
 
 @pytest.mark.parametrize(
     ("count", "weight", "message"),
-    [(-1, 0, "count must be non-negative"), (3, 2, "at least count = 3")],
+    [
+        (-1, 0, "count must be non-negative"),
+        (1, -1, "weight must be non-negative"),
+    ],
 )
 def test_check_region_rejects_impossible_counts(count, weight, message):
     with pytest.raises(ValueError, match=message):
