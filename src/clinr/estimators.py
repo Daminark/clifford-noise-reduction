@@ -664,9 +664,7 @@ def gate_overhead(estimate: Estimate) -> float:
         )
 
     regions = [
-        accounting.check_region(
-            count, weight, estimate.noisy_checks, estimate.native_plus
-        )
+        accounting.check_region(count, weight, estimate.native_plus)
         for count, weight in zip(
             estimate.chunk_checks, estimate.chunk_weight, strict=True
         )

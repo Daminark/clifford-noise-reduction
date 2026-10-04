@@ -123,14 +123,13 @@ def prep_region(n: int, native_plus: bool) -> Region:
     return Region(n1=0 if native_plus else n, n2=n, nm=0, n_prep=2 * n)
 
 
-def check_region(
-    count: int, weight: int, noisy_checks: bool, native_plus: bool
-) -> Region:
+def check_region(count: int, weight: int, native_plus: bool) -> Region:
     """Return the region of ``count`` checks of total weight ``weight``.
 
-    A noisy weight-``w`` check is one preparation, two Hadamards (one under
+    A weight-``w`` check is one preparation, two Hadamards (one under
     ``native_plus``), ``w`` controlled Paulis and one measurement: ``w + 4``
-    operations, or ``w + 3``. An idealized check has no fault locations.
+    operations, or ``w + 3``. The count is the same whether or not the
+    checks are noisy; noiseless checks only have no fault locations.
 
     Parameters
     ----------
@@ -139,8 +138,6 @@ def check_region(
     weight : int
         Their total weight. Must be at least ``count``, since no check is
         the identity.
-    noisy_checks : bool
-        If False, the checks are idealized and the region is :data:`ZERO`.
     native_plus : bool
 
     Returns
@@ -158,8 +155,6 @@ def check_region(
         raise ValueError(
             f"weight must be at least count = {count}, got {weight}"
         )
-    if not noisy_checks:
-        return ZERO
     return Region(
         n1=(1 if native_plus else 2) * count,
         n2=weight,

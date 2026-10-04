@@ -108,6 +108,11 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
     return _Family(r, miss, escapes, weight)
 
 
+def _faulty(checks: Region, noisy_checks: bool) -> Region:
+    """Return the fault locations among ``checks``: none if noiseless."""
+    return checks if noisy_checks else accounting.ZERO
+
+
 def _chunk_plog_bound(
     noise: NoiseModel,
     n: int,
@@ -125,13 +130,17 @@ def _chunk_plog_bound(
     r, miss, escapes, w = family
     prep = accounting.prep_region(n, native_plus)
     resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
-    one_check = accounting.check_region(1, w, noisy_checks, native_plus)
+    one_check = _faulty(
+        accounting.check_region(1, w, native_plus), noisy_checks
+    )
     numerator = (
         _fault_prob(noise, resource) * miss
         + _fault_prob(noise, one_check) * escapes
         + _fault_prob(noise, accounting.teleport_region(n))
     )
-    checks = accounting.check_region(r, r * w, noisy_checks, native_plus)
+    checks = _faulty(
+        accounting.check_region(r, r * w, native_plus), noisy_checks
+    )
     no_fault = _no_fault_prob(
         noise, accounting.protected_region(prep, s1, s2, checks)
     )
@@ -173,10 +182,11 @@ def _overhead_from_counts(
     """
     r, _, _, w = family
     prep = accounting.prep_region(n, native_plus)
-    checks = accounting.check_region(r, r * w, noisy_checks, native_plus)
+    checks = accounting.check_region(r, r * w, native_plus)
+    faulty_checks = _faulty(checks, noisy_checks)
     no_fault = [
         _no_fault_prob(
-            noise, accounting.protected_region(prep, s1, s2, checks)
+            noise, accounting.protected_region(prep, s1, s2, faulty_checks)
         )
         for s1, s2 in counts
     ]
@@ -217,7 +227,8 @@ def plog_bound(
     noisy_checks : bool, optional
         If True, charge each check the fault locations of the ancilla
         gadget; if False, none, as for ``noisy_checks`` in
-        :func:`clinr.protocol.build_clinr_tr`.
+        :func:`clinr.protocol.build_clinr_tr`. The checks' operations
+        count toward the overhead either way.
     restricted_checks : bool, optional
         If True, price draws from :func:`clinr.checks.restricted_family`;
         if False, from the full stabilizer group.

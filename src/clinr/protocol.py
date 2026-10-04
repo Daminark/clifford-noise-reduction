@@ -71,6 +71,9 @@ _PAULI_CHR = "IXYZ"
 # and are not fault locations. The test suite checks this set is exhaustive.
 _IDENTITY_GATES = frozenset({"I", "II"})
 
+# The noise model of a check gadget when checks are noiseless.
+_NOISELESS = NoiseModel(p1=0.0, p2=0.0, p_m=0.0, p_prep=0.0)
+
 
 def _is_two_qubit(name: str) -> bool:
     """Return whether Stim's gate data marks ``name`` as a two-qubit gate."""
@@ -497,7 +500,8 @@ def build_clinr_tr(
     noise : NoiseModel
     noisy_checks : bool, optional
         If True, measure each check with the noisy ancilla gadget; if False,
-        with a noiseless ``MPP``.
+        with the same gadget without noise, so that the checks detect
+        faults but cause none.
     native_plus : bool, optional
         If True, prepare every ``|+>`` with one ``RX``, as in
         arXiv:2407.06583, Sec. II, so that a weight-``w`` check costs
@@ -567,12 +571,13 @@ def build_clinr_tr(
         # Offline checks on this chunk's resource.
         for logical in chunk_checks:
             check = _embed(logical, b2, b3, total)
-            if noisy_checks:
-                _measure_stabilizer_noisy(
-                    out, check, anc, noise, native_plus=native_plus
-                )
-            else:
-                out.append("MPP", _pauli_to_mpp_targets(check))
+            _measure_stabilizer_noisy(
+                out,
+                check,
+                anc,
+                noise if noisy_checks else _NOISELESS,
+                native_plus=native_plus,
+            )
             out.append("DETECTOR", [stim.target_rec(-1)])
 
         # Teleport the data through this chunk: Bell-measure data_in vs b2.

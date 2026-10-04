@@ -324,13 +324,13 @@ def test_gate_overhead_charges_each_chunk_its_own_acceptance():
 def test_gate_overhead_reads_the_options_from_the_estimate():
     """Worked by hand, as the one-chunk example with every option changed.
 
-    Idealized checks cost nothing, and a native |+> drops the preparation's
-    Hadamard: protected region 3 + 10 and teleportation 4, so
-    (4 + 13) / 10 = 1.7.
+    Noiseless checks still cost their operations, and a native |+> drops one
+    Hadamard from the preparation and from each check gadget: protected
+    region 3 + 10 + 10 and teleportation 4, so (4 + 23) / 10 = 2.7.
     """
     estimate = draw(0, 1000, noisy_checks=False, native_plus=True)
 
-    assert estimators.gate_overhead(estimate) == pytest.approx(1.7)
+    assert estimators.gate_overhead(estimate) == pytest.approx(2.7)
 
 
 def test_mean_gate_overhead_averages_draws_rather_than_pooling_them():

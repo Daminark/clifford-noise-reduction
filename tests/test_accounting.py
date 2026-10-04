@@ -37,7 +37,7 @@ def fault_locations(built: stim.Circuit) -> accounting.Region:
         elif inst.name in ("X_ERROR", "Z_ERROR"):
             assert args == [NOISE.p_prep]
             n_prep += targets
-        elif inst.name == "M":
+        elif inst.name == "M" and args:  # a noiseless check measures bare
             assert args == [NOISE.p_m]
             nm += targets
     return accounting.Region(n1=n1, n2=n2, nm=nm, n_prep=n_prep)
@@ -47,8 +47,8 @@ def protocol_operations(built: stim.Circuit, n: int) -> int:
     """Count the operations in ``built`` that belong to the protocol.
 
     Excluded: noise channels and annotations, which are not operations;
-    ``MPP``, which is an idealized check or the harness readout; and anything
-    touching the Choi reference block ``[3n, 4n)``, which is test apparatus.
+    ``MPP``, which is the harness readout; and anything touching the Choi
+    reference block ``[3n, 4n)``, which is test apparatus.
     """
     reference = set(range(3 * n, 4 * n))
     count = 0
@@ -84,15 +84,12 @@ def build(
 
 
 def check_regions(
-    drawn: list[list[stim.PauliString]], noisy_checks: bool, native_plus: bool
+    drawn: list[list[stim.PauliString]], native_plus: bool
 ) -> list[accounting.Region]:
     """Return each chunk's check region, charged at the drawn weights."""
     return [
         accounting.check_region(
-            len(chunk),
-            sum(check.weight for check in chunk),
-            noisy_checks,
-            native_plus,
+            len(chunk), sum(check.weight for check in chunk), native_plus
         )
         for chunk in drawn
     ]
@@ -127,11 +124,13 @@ def test_regions_count_every_fault_location_the_builder_emits(
         for chunk in protocol.chunk_circuit(circuit, n, t)
     ]
 
+    # Noiseless checks are operations without fault locations.
     regions = []
     for (s1, s2), chunk_checks in zip(
-        counts, check_regions(drawn, noisy_checks, native_plus), strict=True
+        counts, check_regions(drawn, native_plus), strict=True
     ):
-        regions.append(accounting.protected_region(prep, s1, s2, chunk_checks))
+        faulty = chunk_checks if noisy_checks else accounting.ZERO
+        regions.append(accounting.protected_region(prep, s1, s2, faulty))
         regions.append(accounting.teleport_region(n))
 
     assert fault_locations(built) == accounting.add(*regions)
@@ -154,7 +153,7 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
 
     With every chunk accepted on its first attempt, the expected number of
     operations is the number in one pass through the built circuit, so the
-    builder is the oracle.
+    builder is the oracle. Noiseless checks are counted like noisy ones.
     """
     circuit = seeded_circuit(n, size, seed)
     drawn, built = build(
@@ -175,7 +174,7 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
         counts,
         n,
         accounting.prep_region(n, native_plus),
-        check_regions(drawn, noisy_checks, native_plus),
+        check_regions(drawn, native_plus),
         [1.0] * t,
     )
 
@@ -257,7 +256,7 @@ def test_regions_reject_n_below_one(region, args):
 )
 def test_check_region_rejects_impossible_counts(count, weight, message):
     with pytest.raises(ValueError, match=message):
-        accounting.check_region(count, weight, True, False)
+        accounting.check_region(count, weight, False)
 
 
 @pytest.mark.parametrize(("s1", "s2"), [(-1, 0), (0, -1)])
