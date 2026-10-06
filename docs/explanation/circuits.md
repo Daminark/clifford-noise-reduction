@@ -281,7 +281,7 @@ A {class}`clinr.noise_models.NoiseModel` holds four rates, and the builders plac
 
 The paper analyzes one rate $p$ and runs its numerics with single-qubit operations ten times less noisy than two-qubit gates; four rates price each kind of operation separately, and {func}`clinr.noise_models.uniform_noise` and {func}`clinr.noise_models.asymmetric_noise` give the paper's two regimes.
 
-Two choices depart from the paper's Sec. II.
+Two choices depart from the paper's Sec. II; {doc}`differences` collects every departure.
 
 - **$|+\rangle$ is a reset and a Hadamard**, two fault locations where the paper charges one.
   This includes the ancilla of each check, so a check of weight $w$ costs $w + 4$ operations against the paper's $w + 3$.

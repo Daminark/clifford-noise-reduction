@@ -74,7 +74,7 @@ and {func}`clinr.bounds.overhead_bound` replaces each $a_k$ by its lower bound $
 ## How these bounds differ from Theorem 1
 
 Theorem 1 states the two bounds for one error rate $p$ and $t$ chunks of $s_0 = \lceil s/t \rceil$ gates each.
-Ours differ from them as follows:
+Ours differ from them as follows, and {doc}`differences` collects these with the package's other departures from the paper:
 
 - **Four rates**, one per kind of operation, where the paper uses one.
 - **Exact chunk sizes**: each chunk is charged its own gates, where the paper charges every chunk $s_0$.

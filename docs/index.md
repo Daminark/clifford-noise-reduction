@@ -30,6 +30,7 @@ explanation/the-scheme
 explanation/circuits
 explanation/checks-and-bounds
 explanation/estimation
+explanation/differences
 explanation/decisions
 ```
 
