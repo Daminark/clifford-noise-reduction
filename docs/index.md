@@ -31,6 +31,7 @@ explanation/circuits
 explanation/checks-and-bounds
 explanation/estimation
 explanation/differences
+explanation/related-work
 explanation/decisions
 ```
 
