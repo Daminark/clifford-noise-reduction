@@ -27,6 +27,7 @@ caption: Explanation
 maxdepth: 1
 ---
 explanation/the-scheme
+explanation/circuits
 explanation/checks-and-bounds
 explanation/decisions
 ```
