@@ -142,7 +142,7 @@ def _processor() -> str:
 
 def provenance() -> dict[str, Any]:
     """Return the versions, commit and platform the run used."""
-    status = _git("status", "--porcelain")
+    status = _git("status", "--porcelain", "--untracked-files=no")
     return {
         "commit": _git("rev-parse", "HEAD"),
         "uncommitted_changes": None if status is None else bool(status),
