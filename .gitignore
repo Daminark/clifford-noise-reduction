@@ -25,3 +25,7 @@ docs/_build/
 # Test artifacts
 .hypothesis/
 .coverage
+
+# Small runs of the experiment scripts, for checking them.
+results/*-quick.json
+results/*.tmp

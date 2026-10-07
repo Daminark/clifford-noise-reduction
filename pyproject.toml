@@ -61,7 +61,7 @@ show_missing = true
 fail_under = 99                # the current level; raise it, never lower it
 
 [tool.mypy]
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 strict = true
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -118,6 +118,8 @@ ignore = ["RUF022"]
 # A test's name states the behavior it checks, so tests, test modules and the
 # tests package need no docstring; the docstrings that are written are checked.
 "tests/**" = ["D100", "D103", "D104"]
+# Experiment scripts are applications, and report progress by printing.
+"scripts/**" = ["T20"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
