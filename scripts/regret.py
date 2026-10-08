@@ -83,7 +83,7 @@ class Config:
 FULL = Config(
     regimes=REGIMES,
     sizes=(3, 8, 15, 25),
-    circuits_per_size=5,
+    circuits_per_size=10,
     ts=(1, 2, 3, 4, 5, 6),
     rs=(0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24),
     ceilings=(2.0, 4.0),
