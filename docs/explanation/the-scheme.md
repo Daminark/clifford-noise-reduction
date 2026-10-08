@@ -240,7 +240,7 @@ The two parameters pull against each other.
 - More checks let fewer faults in the resource escape, since each check misses a damaging fault with probability at most $q < 1$.
   But each check is a gadget that can fault itself, and each lowers the probability that an attempt passes, which raises the number of attempts.
 
-{func}`clinr.bounds.choose_tr` searches the pairs $(t, r)$ for the least bound on the logical error rate, under a cap on the bound on the gate overhead; the {doc}`tutorial <../tutorial/getting-started>` runs it.
+{func}`clinr.bounds.choose_tr` searches the pairs $(t, r)$ and the direct implementation for the least bound on the logical error rate, under a cap on the bound on the gate overhead; the {doc}`tutorial <../tutorial/getting-started>` runs it.
 
 ## Why post-selection stands in for restarts
 

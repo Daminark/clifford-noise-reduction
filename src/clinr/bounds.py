@@ -2,9 +2,10 @@
 
 :func:`plog_bound` and :func:`overhead_bound` rederive Theorem 1 of [1]_
 for the circuits :mod:`clinr.protocol` builds, and :func:`choose_tr` picks
-``(t, r)`` by them. The bounds are deterministic.
+``(t, r)``, or the direct implementation, by them. The bounds are
+deterministic.
 
-They differ from Theorem 1 in what they count, not in how:
+They differ from Theorem 1 mostly in what they count:
 
 - four rates, one per kind of operation (:mod:`clinr.accounting`), where
   the paper has one;
@@ -15,7 +16,9 @@ They differ from Theorem 1 in what they count, not in how:
 - the probability that ``r`` checks all miss a damaging fault, and the sum
   over gadgets of the probability that a fault arising in one escapes every
   later check, for whichever family :func:`clinr.checks.draw_checks` draws
-  from, where the paper has ``2^-r`` and ``2`` for the full group.
+  from, where the paper has ``2^-r`` and ``2`` for the full group;
+- no conditioning on acceptance when ``r == 0``, since every attempt is
+  then accepted.
 
 References
 ----------
@@ -125,10 +128,17 @@ def _chunk_plog_bound(
 
     Lemma 1 of arXiv:2407.06583, Eq. (B1), with the regions of
     :mod:`clinr.accounting` and ``family`` in place of ``2^-r`` and ``2``.
+    With no checks every attempt is accepted, so the conditioning drops out
+    and the bound is the probability that the resource or the teleportation
+    faults.
     """
     r, miss, escapes, w = family
     prep = accounting.prep_region(n, native_plus)
     resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
+    if r == 0:
+        return _fault_prob(
+            noise, accounting.add(resource, accounting.teleport_region(n))
+        )
     one_check = _faulty(
         accounting.check_region(1, w, native_plus), noisy_checks
     )
@@ -177,14 +187,17 @@ def _overhead_from_counts(
 
     Each chunk is charged the worst-case check weight, and its acceptance
     probability the probability that nothing in its protected region
-    faults, which is at most the true acceptance.
+    faults, which is at most the true acceptance. With no checks every
+    attempt is accepted, so the acceptance is 1 and the overhead exact.
     """
     r, _, _, w = family
     prep = accounting.prep_region(n, native_plus)
     checks = accounting.check_region(r, r * w, native_plus)
     faulty_checks = _faulty(checks, noisy_checks)
     no_fault = [
-        _no_fault_prob(
+        1.0
+        if r == 0
+        else _no_fault_prob(
             noise, accounting.protected_region(prep, s1, s2, faulty_checks)
         )
         for s1, s2 in counts
@@ -241,8 +254,9 @@ def plog_bound(
         An upper bound on the logical error rate of the circuit that
         :func:`clinr.protocol.build_clinr_tr` builds with the same options,
         averaged over the checks :func:`clinr.checks.draw_checks` draws.
-        Not clipped to [0, 1], and infinite when some chunk can never be
-        accepted.
+        Not clipped to [0, 1], and infinite when some chunk with checks can
+        never be accepted. With ``r == 0`` it is the probability that some
+        operation outside the checks faults, since no attempt is rejected.
 
     Raises
     ------
@@ -274,7 +288,8 @@ def overhead_bound(
     :func:`clinr.accounting.expected_overhead` with every check at its
     family's worst-case weight and each chunk's acceptance probability
     replaced by the probability that nothing in its protected region
-    faults, which is at most the true acceptance.
+    faults, which is at most the true acceptance. With ``r == 0`` no attempt
+    is rejected, so the acceptance is 1 and the value is exact.
 
     Parameters
     ----------
@@ -289,7 +304,8 @@ def overhead_bound(
     -------
     float
         An upper bound on the expected number of operations per gate of
-        ``circuit``, infinite when some chunk can never be accepted.
+        ``circuit``, infinite when some chunk with checks can never be
+        accepted.
 
     Raises
     ------
@@ -316,12 +332,15 @@ def choose_tr(
     noisy_checks: bool = True,
     restricted_checks: bool = False,
     native_plus: bool = False,
-) -> tuple[int, int]:
-    """Return the ``(t, r)`` with the least logical error rate bound.
+) -> tuple[int, int] | None:
+    """Return the implementation with the least logical error rate bound.
 
-    The search is exhaustive over ``1 <= t <= t_max`` and
-    ``0 <= r <= r_max``, among the pairs whose overhead bound is at most
-    ``max_overhead``; ties go to the smaller ``t``, then the smaller ``r``.
+    The candidates are the direct implementation, whose bound is the
+    probability that one of the gates of ``circuit`` faults and whose
+    overhead is 1, and every ``CliNR_{t,r}`` with ``1 <= t <= t_max`` and
+    ``0 <= r <= r_max`` whose overhead bound is at most ``max_overhead``.
+    Ties go to the direct implementation, then to the smaller ``t``, then
+    to the smaller ``r``.
 
     Parameters
     ----------
@@ -333,7 +352,8 @@ def choose_tr(
         Number of data qubits. Must be at least 1.
     noise : NoiseModel
     max_overhead : float
-        Largest acceptable overhead bound. Must be positive.
+        Largest acceptable overhead bound. Must be at least 1, the overhead
+        of the direct implementation.
     r_max : int
         Largest number of checks per chunk to try. Must be non-negative.
     t_max : int, optional
@@ -345,23 +365,25 @@ def choose_tr(
 
     Returns
     -------
-    tuple of (int, int)
-        ``(t, r)``. A result with ``r == r_max`` may mean the cap binds.
+    tuple of (int, int) or None
+        ``(t, r)``, or ``None`` when the direct implementation's bound is
+        the least. A result with ``r == r_max`` may mean the cap binds.
 
     Raises
     ------
     ValueError
-        If ``n < 1``, ``r_max < 0``, ``t_max < 1``, ``max_overhead`` is not
-        positive, ``circuit`` has no gates, or no pair meets the overhead
-        limit.
+        If ``n < 1``, ``r_max < 0``, ``t_max < 1``, ``max_overhead`` is less
+        than 1, or ``circuit`` has no gates.
     """
     _check_sizes(n, r_max, "r_max")
-    if not max_overhead > 0.0:
-        raise ValueError(f"max_overhead must be positive, got {max_overhead}")
-    size = sum(accounting.gate_counts(circuit))
-    if size == 0:
+    if not max_overhead >= 1.0:
+        raise ValueError(
+            f"max_overhead must be at least 1, got {max_overhead}"
+        )
+    s1, s2 = accounting.gate_counts(circuit)
+    if s1 + s2 == 0:
         raise ValueError("circuit must contain at least one gate")
-    upper_t = size if t_max is None else t_max
+    upper_t = s1 + s2 if t_max is None else t_max
     if upper_t < 1:
         raise ValueError(f"t_max must be at least 1, got {upper_t}")
 
@@ -369,7 +391,7 @@ def choose_tr(
         _check_family(n, r, restricted_checks) for r in range(r_max + 1)
     ]
     best: tuple[int, int] | None = None
-    best_plog = math.inf
+    best_plog = _fault_prob(noise, Region(n1=s1, n2=s2, nm=0, n_prep=0))
     for t in range(1, upper_t + 1):
         chunks = protocol.chunk_circuit(circuit, n, t)
         counts = [accounting.gate_counts(chunk) for chunk in chunks]
@@ -380,8 +402,4 @@ def choose_tr(
             value = _plog_from_counts(counts, *options)
             if value < best_plog:
                 best_plog, best = value, (t, r)
-    if best is None:
-        raise ValueError(
-            f"no (t, r) achieves gate overhead at most {max_overhead}"
-        )
     return best

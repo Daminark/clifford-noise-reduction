@@ -111,15 +111,16 @@ Notice also that with no checks, CliNR does worse than running the circuit direc
 
 ## Let the package choose
 
-Finally, {func}`clinr.bounds.choose_tr` searches for the pair `(t, r)` with the smallest logical error bound whose overhead bound stays within a ceiling we set.
+Finally, {func}`clinr.bounds.choose_tr` compares the direct implementation with every pair `(t, r)` whose overhead bound stays within a ceiling we set, and returns the one with the smallest logical error bound, or `None` for the direct implementation.
 
 ```{code-cell} python
-t, r = bounds.choose_tr(circuit, n, noise, max_overhead=10, r_max=10)
-chosen = estimators.estimate_clinr(circuit, n, t, r, noise, 200_000, rng)
-print(f"chosen: t = {t}, r = {r}, measured {chosen.p_log:.4f}")
+print(bounds.choose_tr(circuit, n, noise, max_overhead=10, r_max=10))
 ```
+
+It keeps the direct implementation, although CliNR measured well below it.
+The choice is made from the bounds alone, and for a circuit this small every CliNR bound within the ceiling sits above the direct implementation's, the probability that one of its gates faults.
 
 ## What we did
 
-We ran a Clifford circuit under CliNR, brought its logical error rate well below the direct rate at about three operations per gate, compared both figures with their analytic bounds, and let the package choose the protocol's parameters.
+We ran a Clifford circuit under CliNR, brought its logical error rate well below the direct rate at about three operations per gate, compared both figures with their analytic bounds, and saw that a choice made from the bounds alone can miss that gain.
 Every function used here, with all its options, is in the {doc}`../reference/api`.

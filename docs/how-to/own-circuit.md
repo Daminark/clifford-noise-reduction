@@ -62,10 +62,13 @@ noise = noise_models.NoiseModel(p1=1e-4, p2=1e-3, p_m=5e-4, p_prep=2e-4)
 ## Choose the number of chunks and checks
 
 Pick `t` and `r` yourself, or let {func}`clinr.bounds.choose_tr` pick the pair with the smallest logical error bound under a ceiling on the overhead bound.
-If the returned `r` equals `r_max`, the cap is binding; raise it and search again.
+It returns `None` when the direct implementation's bound is smaller than every pair's within the ceiling; raise the ceiling, or run the circuit directly.
+If the returned `r` equals `r_max`, the cap may be binding; raise it and search again.
 
 ```{code-cell} python
-t, r = bounds.choose_tr(circuit, n, noise, max_overhead=8, r_max=8)
+choice = bounds.choose_tr(circuit, n, noise, max_overhead=8, r_max=8)
+assert choice is not None, "the bounds favor the direct implementation"
+t, r = choice
 plog = bounds.plog_bound(circuit, n, t, r, noise)
 overhead = bounds.overhead_bound(circuit, n, t, r, noise)
 print(f"t = {t}, r = {r}")

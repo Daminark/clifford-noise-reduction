@@ -60,6 +60,9 @@ with $g_{\mathrm{check}}$ the fault probability of one check gadget at the famil
 {func}`clinr.bounds.plog_bound` returns the sum of $p_k$ over the chunks: a logical error in the output needs one in some chunk.
 At $t = 1$ this is the paper's Lemma 1, Eq. (B1); {mod}`clinr.accounting` counts each region's operations from the circuit as built.
 
+Without checks every attempt is accepted, so there is nothing to condition on.
+At $r = 0$ the bound is instead the probability that some operation in the resource or the teleportation faults, which is below the expression above at $r = 0$.
+
 ## The bound on the gate overhead
 
 The protocol measures all `r` checks of an attempt before deciding (see {doc}`../adr/0001-run-every-check-before-deciding`), so every attempt at chunk $k$ costs its $m_k$ operations, and the number of attempts is geometric with mean $1/a_k$, where $a_k$ is the acceptance probability.
@@ -70,6 +73,7 @@ $$\omega = \frac{1}{s} \sum_{k} \left(4n + \frac{m_k}{a_k}\right),$$
 
 and {func}`clinr.bounds.overhead_bound` replaces each $a_k$ by its lower bound $1 - g_{\mathrm{protected}}$, with every check at worst-case weight.
 {func}`clinr.estimators.gate_overhead` evaluates the same expression with the acceptance and check weights measured.
+Without checks $a_k = 1$, and the bound is exact.
 
 ## How these bounds differ from Theorem 1
 
@@ -80,6 +84,7 @@ Ours differ from them as follows, and {doc}`differences` collects these with the
 - **Exact chunk sizes**: each chunk is charged its own gates, where the paper charges every chunk $s_0$.
 - **$4n$ for the teleportation**, where the paper's $5n$ includes $n$ Pauli gates applying the correction; we track the correction as a Pauli frame instead ({doc}`../adr/0002-deliver-the-output-up-to-a-pauli-frame`).
 - **The preparation convention**: by default $|+\rangle$ is a reset and a Hadamard, two operations where the paper counts one; with `native_plus=True` the counts match the paper's.
+- **No conditioning without checks**: at $r = 0$ every attempt is accepted, so our bound on the logical error rate does not divide by a probability of acceptance and our overhead bound is exact, where Theorem 1 keeps the factor $(1 - p)^{-m_0}$ in both.
 - **The restricted family is bounded too**, with the per-draw miss above, where Theorem 1 covers uniform checks only.
 
 Under the paper's own conventions (one rate, `native_plus=True`, uniform checks), our bounds never exceed Theorem 1's, which the test suite checks over random circuits and parameters.

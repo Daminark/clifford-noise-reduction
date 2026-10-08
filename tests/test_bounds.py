@@ -9,7 +9,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from scipy import stats
 
-from clinr import bounds, circuits, estimators, noise_models
+from clinr import accounting, bounds, circuits, estimators, noise_models
 
 P = 0.01
 UNIFORM = noise_models.uniform_noise(P)
@@ -130,14 +130,15 @@ def test_plog_bound_charges_each_kind_of_operation_at_its_own_rate():
 
     The resource is 2 preparations, 2 single-qubit gates (the |+> Hadamard
     and C) and a CX; the teleportation is a CX, a Hadamard and 2
-    measurements. With no checks the protected region is the resource, so
-    swapping any two rates changes the value.
+    measurements. With no checks nothing is rejected, so the bound is the
+    probability that one of these faults, and swapping any two rates
+    changes the value.
     """
     p1, p2, p_m, p_prep = 0.001, 0.002, 0.003, 0.004
     noise = noise_models.NoiseModel(p1=p1, p2=p2, p_m=p_m, p_prep=p_prep)
     resource_clean = (1 - p1) ** 2 * (1 - p2) * (1 - p_prep) ** 2
     teleport_clean = (1 - p1) * (1 - p2) * (1 - p_m) ** 2
-    plog = (1 - resource_clean + 1 - teleport_clean) / resource_clean
+    plog = 1 - resource_clean * teleport_clean
 
     bound = bounds.plog_bound(stim.Circuit("H 0"), 1, 1, 0, noise)
 
@@ -178,6 +179,8 @@ def test_bounds_do_not_decrease_when_any_rate_rises(
 
 @pytest.mark.parametrize("restricted_checks", [False, True])
 def test_idealized_checks_never_make_the_bound_worse(restricted_checks):
+    # From r = 1 on; the bound without checks is a different, unconditioned
+    # formula and can sit below the bound with one check.
     circuit = seeded_circuit(3, 30, seed=2)
     values = [
         bounds.plog_bound(
@@ -189,7 +192,7 @@ def test_idealized_checks_never_make_the_bound_worse(restricted_checks):
             noisy_checks=False,
             restricted_checks=restricted_checks,
         )
-        for r in range(10)
+        for r in range(1, 10)
     ]
 
     assert values == sorted(values, reverse=True)
@@ -286,8 +289,17 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
         <= max_overhead
     ]
 
-    def choose() -> tuple[int, int]:
-        return bounds.choose_tr(
+    s1, s2 = accounting.gate_counts(circuit)
+    # The direct implementation comes first, so it wins ties, as do the
+    # smaller t and then the smaller r among the pairs.
+    candidates = [(g(p, s1 + s2), None)] + [
+        (bounds.plog_bound(circuit, n, t, r, noise, **options), (t, r))
+        for t, r in feasible
+    ]
+    best = min(candidates, key=lambda candidate: candidate[0])[1]
+
+    assert (
+        bounds.choose_tr(
             circuit,
             n,
             noise,
@@ -296,19 +308,8 @@ def test_choose_tr_returns_the_best_pair_within_the_overhead_limit(
             t_max=t_max,
             **options,
         )
-
-    if not feasible:
-        with pytest.raises(ValueError, match="no \\(t, r\\) achieves"):
-            choose()
-        return
-    best = min(
-        feasible,
-        key=lambda tr: bounds.plog_bound(
-            circuit, n, tr[0], tr[1], noise, **options
-        ),
+        == best
     )
-
-    assert choose() == best
 
 
 @pytest.mark.parametrize(
@@ -341,11 +342,11 @@ def test_bounds_reject_invalid_sizes(n, r, message):
             bound(stim.Circuit("CX 0 1"), n, 1, r, UNIFORM)
 
 
-@pytest.mark.parametrize("max_overhead", [0.0, -1.0, math.nan])
-def test_choose_tr_rejects_an_overhead_limit_that_is_not_positive(
+@pytest.mark.parametrize("max_overhead", [0.0, 0.99, -1.0, math.nan])
+def test_choose_tr_rejects_an_overhead_limit_below_the_direct_one(
     max_overhead,
 ):
-    with pytest.raises(ValueError, match="max_overhead must be positive"):
+    with pytest.raises(ValueError, match="max_overhead must be at least 1"):
         bounds.choose_tr(
             stim.Circuit("CX 0 1"),
             2,
@@ -365,6 +366,45 @@ def test_choose_tr_rejects_a_circuit_without_gates():
 def test_overhead_bound_rejects_a_circuit_without_gates():
     with pytest.raises(ValueError, match="at least one gate"):
         bounds.overhead_bound(stim.Circuit(), 2, 1, 1, UNIFORM)
+
+
+def test_overhead_bound_is_exact_without_checks():
+    """Worked by hand at n = 1, C = H, t = 1 and r = 0.
+
+    The resource is 2 preparations, the |+> Hadamard, a CX and C, so 5
+    operations, and the teleportation 4; with no checks nothing is
+    rejected, so the overhead is (5 + 4) / 1 whatever the noise.
+    """
+    noisy = noise_models.uniform_noise(0.3)
+
+    assert bounds.overhead_bound(stim.Circuit("H 0"), 1, 1, 0, noisy) == 9.0
+
+
+@given(
+    n=st.integers(1, 3),
+    size=st.integers(1, 20),
+    p=st.sampled_from([1e-4, 1e-3, 5e-3]),
+    t=st.integers(1, 4),
+    seed=st.integers(0, 2**32 - 1),
+)
+def test_no_checks_never_bound_below_the_direct_implementation(
+    n, size, p, t, seed
+):
+    circuit = seeded_circuit(n, size, seed)
+    s1, s2 = accounting.gate_counts(circuit)
+    noise = noise_models.uniform_noise(p)
+
+    assert bounds.plog_bound(circuit, n, t, 0, noise) > g(p, s1 + s2)
+
+
+def test_choose_tr_recommends_the_direct_implementation_when_it_is_best():
+    # One gate is cheaper to run directly than any CliNR implementation.
+    assert (
+        bounds.choose_tr(
+            stim.Circuit("H 0"), 1, UNIFORM, max_overhead=100.0, r_max=4
+        )
+        is None
+    )
 
 
 def test_bounds_are_infinite_when_no_attempt_can_succeed():

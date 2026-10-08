@@ -36,6 +36,7 @@ Explained in {doc}`circuits`, except where a row names another page.
 | Error rates in the bounds       | one                                                                                                       | four, one per kind of operation                                                   |
 | Chunk sizes in the bounds       | every chunk charged $s_0 = \lceil s/t \rceil$ gates                                                       | each chunk charged its own gates                                                  |
 | Operations in the bounds        | as in the paper's circuit                                                                                 | as in the circuit built                                                           |
+| Bounds without checks           | conditioned on acceptance, as with checks                                                                 | unconditioned, since every attempt is accepted                                    |
 
 Explained in {doc}`checks-and-bounds`.
 

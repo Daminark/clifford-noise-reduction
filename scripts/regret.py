@@ -1,10 +1,11 @@
 """Measure the regret of choosing ``(t, r)`` by the bound.
 
 For each circuit, noise regime, check family and overhead ceiling, this
-compares the logical error rate at the pair :func:`clinr.bounds.choose_tr`
-picks with the rate at the pair that measurement picks under the same
-ceiling. Every pair of a grid is estimated over draws of the checks; the
-bound's pair and the best few measured pairs are then estimated again with
+compares the logical error rate of the implementation
+:func:`clinr.bounds.choose_tr` picks, a pair or the direct implementation,
+with the rate at the pair that measurement picks under the same ceiling.
+Every pair of a grid is estimated over draws of the checks; the bound's
+pair and the best few measured pairs are then estimated again with
 independent draws, so that the measured choice is not flattered by the
 minimum of noisy estimates.
 
@@ -374,22 +375,19 @@ def run(config: Config, path: Path, workers: int) -> None:
             for t in config.ts
             for r in config.rs
         }
+        # None records the direct implementation.
         choice: dict[str, list[int] | None] = {}
         for ceiling in config.ceilings:
-            try:
-                picked = bounds.choose_tr(
-                    circuit,
-                    n,
-                    noise,
-                    max_overhead=ceiling,
-                    r_max=max(config.rs),
-                    t_max=max(config.ts),
-                    restricted_checks=restricted,
-                )
-            except ValueError:
-                choice[str(ceiling)] = None
-            else:
-                choice[str(ceiling)] = list(picked)
+            picked = bounds.choose_tr(
+                circuit,
+                n,
+                noise,
+                max_overhead=ceiling,
+                r_max=max(config.rs),
+                t_max=max(config.ts),
+                restricted_checks=restricted,
+            )
+            choice[str(ceiling)] = None if picked is None else list(picked)
         data["bounds"][key] = {"grid": grid, "choice": choice}
         state.save()
 
