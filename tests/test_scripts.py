@@ -34,13 +34,18 @@ def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
     assert len(data["choices"]) == len(cases) * len(config.ceilings)
     for record in data["grid"].values():
         assert len(record["accepted"]) == config.draws
+    assert data["direct_reestimates"].keys() == data["direct"].keys()
     for key, choice in data["choices"].items():
         case = key.rsplit("/", 1)[0]
-        pairs = list(choice["measured"])
-        if choice["bound"] is not None:
-            pairs.append(choice["bound"])
-        for t, r in pairs:
-            assert regret._key(case, t, r) in data["reestimates"]
+        assert 1 <= len(choice["measured"]) <= config.top
+        picks = [choice["bound"], *choice["measured"]]
+        for pick in [*picks, choice["rule"], choice["rule_by_bound"]]:
+            if isinstance(pick, list):
+                t, r = pick
+                assert regret._key(case, t, r) in data["reestimates"]
+            else:
+                assert pick in (regret.DIRECT, None)
+        assert None not in picks
     assert data["runs"][0]["provenance"]["packages"]["stim"]
     assert "finished" in data["runs"][0]
 
@@ -49,6 +54,13 @@ def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
     assert again["grid"] == data["grid"]
     assert again["reestimates"] == data["reestimates"]
     assert len(again["runs"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("size", "n", "r"), [(5, 3, 0), (6, 3, 1), (29, 3, 3), (886, 25, 5)]
+)
+def test_paper_r_is_the_floor_of_log2_of_size_over_n(size, n, r):
+    assert _load("regret").paper_r(size, n) == r
 
 
 def test_regret_refuses_a_file_made_with_other_settings(tmp_path):

@@ -1,13 +1,15 @@
 """Measure the regret of choosing ``(t, r)`` by the bound.
 
 For each circuit, noise regime, check family and overhead ceiling, this
-compares the logical error rate of the implementation
-:func:`clinr.bounds.choose_tr` picks, a pair or the direct implementation,
-with the rate at the pair that measurement picks under the same ceiling.
-Every pair of a grid is estimated over draws of the checks; the bound's
-pair and the best few measured pairs are then estimated again with
-independent draws, so that the measured choice is not flattered by the
-minimum of noisy estimates.
+records three choices of implementation under the ceiling: the one
+:func:`clinr.bounds.choose_tr` picks, a pair or the direct implementation;
+the paper's rule, ``r = floor(log2(s / n))`` and the smallest ``t`` whose
+overhead fits, by measurement and by the bound; and the best few that
+measurement finds, the direct implementation among them. Every pair of a
+grid is estimated over draws of the checks, and every chosen pair is then
+estimated again with independent draws, as is the direct implementation,
+so that the measured choice is not flattered by the minimum of noisy
+estimates.
 
 Run from the repository root::
 
@@ -43,24 +45,28 @@ from typing import Any
 import numpy as np
 import stim
 
-from clinr import bounds, circuits, estimators
+from clinr import accounting, bounds, circuits, estimators
 from clinr.noise_models import NoiseModel, asymmetric_noise
 
 # The paper's numerics (arXiv:2407.06583, Sec. V) without idle noise, and a
 # regime from IonQ's published Forte Enterprise figures: single-qubit gate
 # error 2e-4, two-qubit gate error 4e-3, and SPAM error 5e-3, placed mostly
 # on measurement, where published trapped-ion error budgets put most of it.
-REGIMES: dict[str, NoiseModel] = {
-    "paper": asymmetric_noise(1e-3),
-    "forte-like": NoiseModel(p1=2e-4, p2=4e-3, p_m=4.8e-3, p_prep=2e-4),
-}
+REGIMES: tuple[tuple[str, NoiseModel], ...] = (
+    ("paper", asymmetric_noise(1e-3)),
+    ("forte-like", NoiseModel(p1=2e-4, p2=4e-3, p_m=4.8e-3, p_prep=2e-4)),
+)
 FAMILIES: dict[str, bool] = {"uniform": False, "restricted": True}
+
+# How a choice records the direct implementation.
+DIRECT = "direct"
 
 
 @dataclasses.dataclass(frozen=True)
 class Config:
     """The settings of a run, saved with its results."""
 
+    regimes: tuple[tuple[str, NoiseModel], ...]
     sizes: tuple[int, ...]
     circuits_per_size: int
     ts: tuple[int, ...]
@@ -75,6 +81,7 @@ class Config:
 
 
 FULL = Config(
+    regimes=REGIMES,
     sizes=(3, 8, 15, 25),
     circuits_per_size=5,
     ts=(1, 2, 3, 4, 5, 6),
@@ -88,10 +95,11 @@ FULL = Config(
     seed=20261007,
 )
 QUICK = Config(
+    regimes=REGIMES,
     sizes=(2,),
     circuits_per_size=1,
     ts=(1, 2),
-    rs=(0, 1, 2),
+    rs=(0, 1, 2, 3),
     ceilings=(2.0, 4.0),
     draws=3,
     reestimate_draws=3,
@@ -101,9 +109,9 @@ QUICK = Config(
     seed=1,
 )
 
-# Phases of the run, which separate the random streams of the grid from
-# those of the re-estimates.
-GRID, REESTIMATE, DIRECT = 0, 1, 2
+# Phases of the run, which separate the random streams of the grid, the
+# re-estimates, and the two estimates of the direct implementation.
+GRID, REESTIMATE, DIRECT_FIRST, DIRECT_AGAIN = 0, 1, 2, 3
 
 
 def _key(*parts: object) -> str:
@@ -114,6 +122,14 @@ def _key(*parts: object) -> str:
 def _seed(config: Config, *spawn_key: int) -> np.random.SeedSequence:
     """Return the seed of one point, spawned from the run's seed."""
     return np.random.SeedSequence(config.seed, spawn_key=spawn_key)
+
+
+def paper_r(size: int, n: int) -> int:
+    """Return the paper's number of checks, ``floor(log2(size / n))``.
+
+    Arithmetic on integers, so exact; 0 when ``size < 2 n``.
+    """
+    return max((size // n).bit_length() - 1, 0)
 
 
 def _git(*args: str) -> str | None:
@@ -265,12 +281,9 @@ class Run:
             self.data = {
                 "experiment": "regret",
                 "config": dataclasses.asdict(config),
-                "regimes": {
-                    name: dataclasses.asdict(noise)
-                    for name, noise in REGIMES.items()
-                },
                 "circuits": {},
                 "direct": {},
+                "direct_reestimates": {},
                 "bounds": {},
                 "grid": {},
                 "choices": {},
@@ -280,8 +293,9 @@ class Run:
                     "numpy.random.SeedSequence(config.seed, spawn_key=(phase, "
                     "regime index, n, circuit index, family index, t, r)), "
                     "with phase 0 for the grid and 1 for the re-estimates, "
-                    "and the direct implementation's by spawn_key=(2, regime "
-                    "index, n, circuit index)"
+                    "and the direct implementation's by spawn_key=(phase, "
+                    "regime index, n, circuit index), with phase 2 for the "
+                    "first estimate and 3 for the re-estimate"
                 ),
                 "runs": [],
             }
@@ -322,7 +336,7 @@ class Run:
 
 def cases(config: Config) -> Iterator[tuple[int, str, int, int, str, int]]:
     """Yield ``(regime index, regime, n, circuit, family, family index)``."""
-    for i, regime in enumerate(REGIMES):
+    for i, (regime, _) in enumerate(config.regimes):
         for n in config.sizes:
             for c in range(config.circuits_per_size):
                 for j, family in enumerate(FAMILIES):
@@ -333,27 +347,36 @@ def run(config: Config, path: Path, workers: int) -> None:
     """Run the experiment, resuming from ``path`` if it exists."""
     state = Run(path, config)
     data = state.data
+    regimes = dict(config.regimes)
     texts = {n: state.circuits(n) for n in config.sizes}
+    rule_rs = {
+        (n, c): paper_r(sum(accounting.gate_counts(stim.Circuit(text))), n)
+        for n in config.sizes
+        for c, text in enumerate(texts[n])
+    }
+    missing = sorted(set(rule_rs.values()) - set(config.rs))
+    if missing:
+        raise SystemExit(f"the paper's rule needs r in {missing}, not in rs")
 
-    # The direct implementation, once per regime and circuit.
-    for i, regime in enumerate(REGIMES):
+    # The direct implementation, twice per regime and circuit.
+    for i, (regime, noise) in enumerate(config.regimes):
         for n in config.sizes:
             for c, text in enumerate(texts[n]):
                 key = _key(regime, n, c)
-                if key in data["direct"]:
-                    continue
-                rng = np.random.default_rng(_seed(config, DIRECT, i, n, c))
-                direct = estimators.estimate_direct(
-                    stim.Circuit(text),
-                    n,
-                    REGIMES[regime],
-                    config.direct_shots,
-                    rng,
-                )
-                data["direct"][key] = {
-                    "shots": direct.shots,
-                    "errors": direct.errors,
-                }
+                for table, phase in (
+                    ("direct", DIRECT_FIRST),
+                    ("direct_reestimates", DIRECT_AGAIN),
+                ):
+                    if key in data[table]:
+                        continue
+                    rng = np.random.default_rng(_seed(config, phase, i, n, c))
+                    direct = estimators.estimate_direct(
+                        stim.Circuit(text), n, noise, config.direct_shots, rng
+                    )
+                    data[table][key] = {
+                        "shots": direct.shots,
+                        "errors": direct.errors,
+                    }
     state.save()
 
     # The bounds at every grid pair, and the bound's choice per ceiling.
@@ -361,7 +384,7 @@ def run(config: Config, path: Path, workers: int) -> None:
         key = _key(regime, n, c, family)
         if key in data["bounds"]:
             continue
-        circuit, noise = stim.Circuit(texts[n][c]), REGIMES[regime]
+        circuit, noise = stim.Circuit(texts[n][c]), regimes[regime]
         restricted = FAMILIES[family]
         grid = {
             _key(t, r): [
@@ -375,8 +398,7 @@ def run(config: Config, path: Path, workers: int) -> None:
             for t in config.ts
             for r in config.rs
         }
-        # None records the direct implementation.
-        choice: dict[str, list[int] | None] = {}
+        choice: dict[str, list[int] | str] = {}
         for ceiling in config.ceilings:
             picked = bounds.choose_tr(
                 circuit,
@@ -387,7 +409,7 @@ def run(config: Config, path: Path, workers: int) -> None:
                 t_max=max(config.ts),
                 restricted_checks=restricted,
             )
-            choice[str(ceiling)] = None if picked is None else list(picked)
+            choice[str(ceiling)] = DIRECT if picked is None else list(picked)
         data["bounds"][key] = {"grid": grid, "choice": choice}
         state.save()
 
@@ -404,7 +426,7 @@ def run(config: Config, path: Path, workers: int) -> None:
                 args["n"],
                 args["t"],
                 args["r"],
-                dataclasses.asdict(REGIMES[args["regime"]]),
+                dataclasses.asdict(regimes[args["regime"]]),
                 FAMILIES[args["family"]],
                 draws,
                 config.shots,
@@ -455,33 +477,62 @@ def run(config: Config, path: Path, workers: int) -> None:
         submit_all(pool, jobs, config.draws)
         state.save()
 
-        # The measured choices, and the pairs to estimate again.
+        # The choices, and the pairs to estimate again.
         jobs = []
         for i, regime, n, c, family, j in cases(config):
             restricted = FAMILIES[family]
             case = _key(regime, n, c, family)
-            points = []
+            record = data["direct"][_key(regime, n, c)]
+            direct_rate = record["errors"] / record["shots"]
+            points = {}
             for t in config.ts:
                 for r in config.rs:
                     record = data["grid"][_key(case, t, r)]
-                    rate, overhead = measured(record, n, restricted)
-                    points.append((rate, overhead, t, r))
+                    points[t, r] = measured(record, n, restricted)
+            rule_r = rule_rs[n, c]
+            grid_bounds = data["bounds"][case]["grid"]
             again: set[tuple[int, int]] = set()
             for ceiling in config.ceilings:
-                feasible = sorted(
-                    (rate, t, r)
-                    for rate, overhead, t, r in points
+                # The direct implementation first, so that it wins ties.
+                candidates: list[tuple[float, list[int] | str]] = [
+                    (direct_rate, DIRECT)
+                ] + [
+                    (rate, [t, r])
+                    for (t, r), (rate, overhead) in points.items()
                     if overhead <= ceiling and not math.isnan(rate)
+                ]
+                candidates.sort(key=lambda candidate: candidate[0])
+                top = [pick for _, pick in candidates[: config.top]]
+                # The paper's rule: the smallest t whose overhead fits.
+                rule = next(
+                    (
+                        [t, rule_r]
+                        for t in config.ts
+                        if points[t, rule_r][1] <= ceiling
+                        and not math.isnan(points[t, rule_r][0])
+                    ),
+                    None,
                 )
-                top = [[t, r] for _, t, r in feasible[: config.top]]
+                rule_by_bound = next(
+                    (
+                        [t, rule_r]
+                        for t in config.ts
+                        if grid_bounds[_key(t, rule_r)][1] <= ceiling
+                    ),
+                    None,
+                )
                 picked = data["bounds"][case]["choice"][str(ceiling)]
+                # Pairs are [t, r], "direct" is the direct implementation,
+                # and None a rule that no t in the grid satisfies.
                 data["choices"][_key(case, ceiling)] = {
                     "bound": picked,
+                    "rule": rule,
+                    "rule_by_bound": rule_by_bound,
                     "measured": top,
                 }
-                again.update((t, r) for t, r in top)
-                if picked is not None:
-                    again.add((picked[0], picked[1]))
+                for pick in [picked, rule, rule_by_bound, *top]:
+                    if isinstance(pick, list):
+                        again.add((pick[0], pick[1]))
             for t, r in sorted(again):
                 key = _key(case, t, r)
                 if key not in data["reestimates"]:
