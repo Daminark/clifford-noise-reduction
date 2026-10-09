@@ -5,8 +5,8 @@ three noise regimes, the logical error rate of the direct implementation
 and of CliNR at a budget of 2 and of 4 on the gate overhead. Under each
 regime the sizes run in steps, coarser beyond a set size, until the direct
 implementation's bound, which is nearly exact, reaches a set logical error
-rate on the median circuit. The maps: the same comparison at a budget of
-2 for random gate sequences of ``n^alpha`` gates, over a grid of ``n`` and
+rate on the median circuit. The maps: the same comparison at both budgets
+for random gate sequences of ``n^alpha`` gates, over a grid of ``n`` and
 ``alpha``, under two regimes.
 
 CliNR's parameters follow the paper's rule (arXiv:2407.06583, Fig. 2):
@@ -104,7 +104,7 @@ FULL = Config(
     ),
     alphas=(1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0),
     map_circuits=10,
-    map_budgets=(2.0,),
+    map_budgets=(2.0, 4.0),
     t_max=12,
     pilot_draws=3,
     pilot_shots=1_000,
