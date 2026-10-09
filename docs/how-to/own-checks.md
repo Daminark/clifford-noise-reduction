@@ -12,8 +12,8 @@ kernelspec:
 # Measure checks of your own choosing
 
 {func}`clinr.estimators.estimate_clinr` draws its checks at random.
-This guide measures checks you choose instead, here the lightest stabilizers of the resource state, by building the circuit and sampling it with Stim.
-The analytic bounds and {func}`clinr.estimators.gate_overhead` cover only the two random families, so this path gives the logical error rate and the acceptance rate.
+This guide evaluates checks you choose instead, here the lightest stabilizers of the resource state: by sampling the circuit with Stim, exactly to first order in the error rates with {mod}`clinr.first_order`, and in operations with {mod}`clinr.accounting`.
+The analytic bounds and {func}`clinr.estimators.gate_overhead` cover only the two random families.
 
 ## Find the stabilizers of each chunk's resource state
 
@@ -87,4 +87,51 @@ detectors, observables = sampler.sample(100_000, separate_observables=True)
 accepted = ~detectors.any(axis=1)
 print(f"acceptance: {accepted.mean():.3f}")
 print(f"logical error rate: {observables[accepted].any(axis=1).mean():.4f}")
+```
+
+## Compute the rates to first order
+
+To first order in the error rates, {func}`clinr.first_order.faults` gives the same two numbers without sampling, and attributes the undetected logical errors to the regions of the circuit, by the tags {func}`clinr.protocol.build_clinr_tr` puts on its noise channels:
+
+```{code-cell} python
+from collections import defaultdict
+
+from clinr import first_order
+
+faults = first_order.faults(built)
+rejected = sum(fault.probability for fault in faults if fault.detected)
+print(f"acceptance: {1 - rejected:.3f}")
+print(f"logical error rate: {first_order.logical_error_rate(faults):.4f}")
+by_region = defaultdict(float)
+for fault in faults:
+    if fault.logical and not fault.detected:
+        by_region[fault.tag.split("/")[0]] += fault.probability
+print({region: round(rate, 5) for region, rate in by_region.items()})
+```
+
+The first-order values are exact for these checks, and differ from the sampled ones by the effect of several faults in one shot.
+
+## Price the overhead
+
+{func}`clinr.accounting.expected_overhead` takes each chunk's gate counts, check region and acceptance.
+The detectors come in chunk order, `r` per chunk, so each chunk's acceptance is the fraction of shots in which none of its own fires:
+
+```{code-cell} python
+from clinr import accounting
+
+per_chunk = detectors.reshape(len(detectors), t, r)
+acceptance = [float(rate) for rate in (~per_chunk.any(axis=2)).mean(axis=0)]
+overhead = accounting.expected_overhead(
+    [accounting.gate_counts(chunk) for chunk in chunks],
+    n,
+    accounting.prep_region(n, native_plus=False),
+    [
+        accounting.check_region(
+            r, sum(check.weight for check in chunk_checks), native_plus=False
+        )
+        for chunk_checks in checks
+    ],
+    acceptance,
+)
+print(f"gate overhead: {overhead:.2f}")
 ```
