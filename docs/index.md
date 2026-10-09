@@ -32,6 +32,7 @@ explanation/checks-and-bounds
 explanation/estimation
 explanation/families
 explanation/regret
+explanation/sharpness
 explanation/differences
 explanation/related-work
 explanation/decisions

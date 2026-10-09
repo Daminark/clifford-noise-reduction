@@ -239,12 +239,18 @@ def waterfall(
         :data:`REGIONS` at the first three stages; and ``overhead``, the
         overhead bound, the overhead with the measured acceptance and
         worst-case check weights, and the measured overhead.
-        The stages replace, in turn: every fault charged by the bound with
-        the faults that damage the output, at the worst-case detection
-        (``damaging``); the worst-case detection with the faults that
-        escape the drawn checks (``detection``); the bound on each chunk's
-        acceptance with its measured acceptance (``acceptance``); and the
-        first-order rate with the measured one (``measured``).
+        The stages replace, in turn: the probability that a region faults
+        with the probability that it faults damagingly, at the worst-case
+        detection (``damaging``); the worst-case detection with the faults
+        that escape the drawn checks (``detection``); the bound on each
+        chunk's acceptance with its measured acceptance (``acceptance``);
+        and the rate so obtained with the measured one (``measured``).
+        The first two replacements scale each of the bound's fault
+        probabilities by a fraction of first-order quantities: the
+        damaging, or escaping, fault probability of the region over the
+        total of its fault rates. Scaling keeps the fault probabilities
+        exact where first-order sums would exceed them, so that each
+        replacement isolates one source of slack.
     """
     regret_config = results["config"]
     regimes = {
@@ -267,15 +273,35 @@ def waterfall(
         )
         stages = dict.fromkeys(STAGES, 0.0)
         regions = {stage: dict.fromkeys(REGIONS, 0.0) for stage in STAGES[:3]}
+        counts = [
+            accounting.gate_counts(chunk)
+            for chunk in protocol.chunk_circuit(circuit, n, t)
+        ]
+        worst = n + 1 if restricted else 2 * n
+        prep = accounting.prep_region(n, native_plus=False)
         for k, term in enumerate(terms):
             q = term.per_check_miss
-            charged = {
-                "resource": term.resource * term.miss,
-                "check": term.check * term.escapes,
+            s1, s2 = counts[k]
+            # Each region's fault probability, and the total of its rates.
+            exact = {
+                "resource": term.resource,
+                "check": term.check,
                 "teleport": term.teleport,
             }
+            rates = {
+                "resource": _rate_sum(
+                    noise,
+                    accounting.add(
+                        prep, accounting.Region(n1=s1, n2=s2, nm=0, n_prep=0)
+                    ),
+                ),
+                "check": _rate_sum(
+                    noise, accounting.check_region(1, worst, False)
+                ),
+                "teleport": _rate_sum(noise, accounting.teleport_region(n)),
+            }
             resource, _, teleport = point["damaging"][k]
-            damaging = {
+            harmful = {
                 "resource": resource * term.miss,
                 "check": sum(
                     gadget * q ** (r - 1 - j)
@@ -283,7 +309,21 @@ def waterfall(
                 ),
                 "teleport": teleport,
             }
-            escaped = dict(zip(REGIONS, point["undetected"][k], strict=True))
+            charged = {
+                "resource": term.resource * term.miss,
+                "check": term.check * term.escapes,
+                "teleport": term.teleport,
+            }
+            damaging = {
+                region: exact[region] * harmful[region] / rates[region]
+                for region in REGIONS
+            }
+            escaped = {
+                region: exact[region] * escaping / rates[region]
+                for region, escaping in zip(
+                    REGIONS, point["undetected"][k], strict=True
+                )
+            }
             for stage, values in (
                 ("bound", charged),
                 ("damaging", damaging),
@@ -296,12 +336,6 @@ def waterfall(
                 acceptance[k]
             )
         stages["measured"] = rate
-        counts = [
-            accounting.gate_counts(chunk)
-            for chunk in protocol.chunk_circuit(circuit, n, t)
-        ]
-        worst = n + 1 if restricted else 2 * n
-        prep = accounting.prep_region(n, native_plus=False)
         rows.append(
             {
                 "regime": regime,
@@ -328,6 +362,16 @@ def waterfall(
             }
         )
     return rows
+
+
+def _rate_sum(noise: NoiseModel, region: accounting.Region) -> float:
+    """Return the total of the fault rates of a region's operations."""
+    return (
+        region.n1 * noise.p1
+        + region.n2 * noise.p2
+        + region.nm * noise.p_m
+        + region.n_prep * noise.p_prep
+    )
 
 
 def digest(path: Path) -> str:
