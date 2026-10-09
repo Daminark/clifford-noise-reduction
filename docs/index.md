@@ -30,6 +30,8 @@ explanation/the-scheme
 explanation/circuits
 explanation/checks-and-bounds
 explanation/estimation
+explanation/families
+explanation/regret
 explanation/differences
 explanation/related-work
 explanation/decisions

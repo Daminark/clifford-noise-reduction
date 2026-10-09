@@ -262,6 +262,72 @@ def measured(
     return rate, overhead
 
 
+Pick = list[int] | str | None
+
+
+def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the measured outcome of every choice in a results file.
+
+    Each outcome is read from the fresh estimates (the re-estimates, and
+    the second estimate of the direct implementation), never from the grid
+    the measured choice was selected on.
+
+    Parameters
+    ----------
+    data : dict
+        A finished results file, as loaded from JSON.
+
+    Returns
+    -------
+    list of dict
+        One record per case and ceiling, with keys ``regime``, ``n``,
+        ``circuit``, ``family`` and ``ceiling``; ``direct``, the rate of the
+        direct implementation; and, for each choice, its pick and its rate:
+        ``best`` (the measured choice), ``best_pair`` (the best pair by
+        measurement), ``bound``, ``rule`` and ``rule_by_bound``. A pick is
+        ``[t, r]``, ``"direct"``, or ``None`` when there is none, in which
+        case its rate is ``nan``.
+    """
+
+    def rate(case: str, n: int, family: str, pick: Pick) -> float:
+        if pick is None:
+            return math.nan
+        if pick == DIRECT:
+            regime, _, c, _ = case.split("/")
+            record = data["direct_reestimates"][_key(regime, n, c)]
+            return float(record["errors"] / record["shots"])
+        assert isinstance(pick, list)
+        record = data["reestimates"][_key(case, *pick)]
+        return measured(record, n, FAMILIES[family])[0]
+
+    rows = []
+    for key, choice in data["choices"].items():
+        case, ceiling = key.rsplit("/", 1)
+        regime, size, c, family = case.split("/")
+        n = int(size)
+        pairs = [pick for pick in choice["measured"] if pick != DIRECT]
+        picks: dict[str, Pick] = {
+            "best": choice["measured"][0],
+            "best_pair": pairs[0] if pairs else None,
+            "bound": choice["bound"],
+            "rule": choice["rule"],
+            "rule_by_bound": choice["rule_by_bound"],
+        }
+        row: dict[str, Any] = {
+            "regime": regime,
+            "n": n,
+            "circuit": int(c),
+            "family": family,
+            "ceiling": float(ceiling),
+            "direct": rate(case, n, family, DIRECT),
+        }
+        for name, pick in picks.items():
+            row[f"{name}_pick"] = pick
+            row[name] = rate(case, n, family, pick)
+        rows.append(row)
+    return rows
+
+
 class Run:
     """The results file of a run, loaded, extended and saved."""
 

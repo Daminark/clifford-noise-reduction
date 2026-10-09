@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -54,6 +55,29 @@ def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
     assert again["grid"] == data["grid"]
     assert again["reestimates"] == data["reestimates"]
     assert len(again["runs"]) == 2
+
+
+def test_regret_outcomes_read_every_choice_from_fresh_estimates(tmp_path):
+    regret = _load("regret")
+    path = tmp_path / "regret.json"
+    regret.main(["--quick", "--output", str(path), "--workers", "1"])
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    rows = regret.outcomes(data)
+
+    assert len(rows) == len(data["choices"])
+    for row in rows:
+        key = regret._key(row["regime"], row["n"], row["circuit"])
+        again = data["direct_reestimates"][key]
+        assert row["direct"] == again["errors"] / again["shots"]
+        for name in ("best", "best_pair", "bound", "rule", "rule_by_bound"):
+            pick = row[f"{name}_pick"]
+            if pick is None:
+                assert math.isnan(row[name])
+            elif pick == regret.DIRECT:
+                assert row[name] == row["direct"]
+            else:
+                assert 0.0 <= row[name] <= 1.0
 
 
 @pytest.mark.parametrize(
