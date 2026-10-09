@@ -38,7 +38,9 @@ from .accounting import Region
 from .noise_models import NoiseModel
 
 __all__ = [
+    "ChunkTerms",
     "plog_bound",
+    "plog_terms",
     "overhead_bound",
     "choose_tr",
 ]
@@ -64,18 +66,79 @@ def _fault_prob(noise: NoiseModel, region: Region) -> float:
 
 
 class _Family(NamedTuple):
-    """The detection numbers of ``r`` checks, valid only at that ``r``.
+    """``r`` draws from a family of checks.
 
-    ``miss`` is the worst-case probability that a damaging fault in the
-    resource commutes with all ``r`` checks; ``escapes`` sums, over the
-    gadgets, the probability that a fault arising in one commutes with every
-    later check; ``weight`` is the worst-case weight of one check.
+    ``q`` is the worst-case probability that one draw misses a damaging
+    fault, and ``weight`` the worst-case weight of one check.
     """
 
     r: int
-    miss: float
-    escapes: float
+    q: float
     weight: int
+
+
+class ChunkTerms(NamedTuple):
+    """The terms of one chunk's bound on the logical error rate, ``r >= 1``.
+
+    The chunk's bound is
+    ``(resource * miss + check * escapes + teleport) / acceptance``, with
+    ``miss = q**r`` and ``escapes = 1 + q + ... + q**(r - 1)`` for ``q`` the
+    per-check miss.
+
+    Parameters
+    ----------
+    resource : float
+        Probability that some operation of the resource faults.
+    check : float
+        Probability that some operation of one check gadget faults, at the
+        family's worst-case weight; 0 for noiseless checks.
+    teleport : float
+        Probability that some operation of the teleportation faults.
+    acceptance : float
+        Probability that no operation of the protected region faults, a
+        lower bound on the chunk's acceptance.
+    checks : int
+        The number of checks ``r``.
+    per_check_miss : float
+        The worst-case probability ``q`` that one check misses a damaging
+        fault: ``1/2`` for uniform checks, ``1 - 2/(3n)`` for restricted ones.
+    """
+
+    resource: float
+    check: float
+    teleport: float
+    acceptance: float
+    checks: int
+    per_check_miss: float
+
+    @property
+    def miss(self) -> float:
+        """The worst-case probability that all ``r`` checks miss."""
+        miss = 1.0
+        for _ in range(self.checks):
+            miss *= self.per_check_miss
+        return miss
+
+    @property
+    def escapes(self) -> float:
+        """The sum over gadgets of the probability that later checks miss."""
+        escapes, miss = 0.0, 1.0
+        for _ in range(self.checks):
+            escapes += miss
+            miss *= self.per_check_miss
+        return escapes
+
+    @property
+    def bound(self) -> float:
+        """The chunk's bound, infinite if no attempt can be accepted."""
+        if self.acceptance == 0.0:
+            return math.inf
+        numerator = (
+            self.resource * self.miss
+            + self.check * self.escapes
+            + self.teleport
+        )
+        return numerator / self.acceptance
 
 
 def _check_sizes(n: int, r: int, name: str = "r") -> None:
@@ -90,24 +153,16 @@ def _check_family(n: int, r: int, restricted_checks: bool) -> _Family:
     """Return the :class:`_Family` of ``r`` draws from the chosen family.
 
     The per-draw worst-case miss ``q`` is ``1 - 2/(3n)`` for the restricted
-    family and ``1/2`` for the full group, identity included; ``miss = q^r``
-    and ``escapes = 1 + q + ... + q^(r-1)``.
+    family and ``1/2`` for the full group, identity included.
     Requires ``n >= 1`` and ``r >= 0``.
     """
     # Exact for what draw_checks samples. The draws are independent, so the
-    # misses multiply, and a fault arising in gadget j faces r - j fresh
-    # draws even when its residual depends on check j itself.
+    # misses multiply (ChunkTerms.miss), and a fault arising in gadget j
+    # faces r - j fresh draws even when its residual depends on check j
+    # itself (ChunkTerms.escapes).
     if restricted_checks:
-        q = (3 * n - 2) / (3 * n)
-        weight = n + 1
-    else:
-        q = 0.5
-        weight = 2 * n
-    miss, escapes = 1.0, 0.0
-    for _ in range(r):
-        escapes += miss
-        miss *= q
-    return _Family(r, miss, escapes, weight)
+        return _Family(r, (3 * n - 2) / (3 * n), n + 1)
+    return _Family(r, 0.5, 2 * n)
 
 
 def _faulty(checks: Region, noisy_checks: bool) -> Region:
@@ -132,30 +187,47 @@ def _chunk_plog_bound(
     and the bound is the probability that the resource or the teleportation
     faults.
     """
-    r, miss, escapes, w = family
-    prep = accounting.prep_region(n, native_plus)
-    resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
-    if r == 0:
+    if family.r == 0:
+        prep = accounting.prep_region(n, native_plus)
+        resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
         return _fault_prob(
             noise, accounting.add(resource, accounting.teleport_region(n))
         )
+    return _chunk_terms(
+        noise, n, s1, s2, family, noisy_checks, native_plus
+    ).bound
+
+
+def _chunk_terms(
+    noise: NoiseModel,
+    n: int,
+    s1: int,
+    s2: int,
+    family: _Family,
+    noisy_checks: bool,
+    native_plus: bool,
+) -> ChunkTerms:
+    """Return the terms of one chunk's bound; requires ``family.r >= 1``."""
+    r, q, w = family
+    assert r >= 1, "the bound without checks has no terms"
+    prep = accounting.prep_region(n, native_plus)
+    resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
     one_check = _faulty(
         accounting.check_region(1, w, native_plus), noisy_checks
-    )
-    numerator = (
-        _fault_prob(noise, resource) * miss
-        + _fault_prob(noise, one_check) * escapes
-        + _fault_prob(noise, accounting.teleport_region(n))
     )
     checks = _faulty(
         accounting.check_region(r, r * w, native_plus), noisy_checks
     )
-    no_fault = _no_fault_prob(
-        noise, accounting.protected_region(prep, s1, s2, checks)
+    return ChunkTerms(
+        resource=_fault_prob(noise, resource),
+        check=_fault_prob(noise, one_check),
+        teleport=_fault_prob(noise, accounting.teleport_region(n)),
+        acceptance=_no_fault_prob(
+            noise, accounting.protected_region(prep, s1, s2, checks)
+        ),
+        checks=r,
+        per_check_miss=q,
     )
-    if no_fault == 0.0:
-        return math.inf
-    return numerator / no_fault
 
 
 def _plog_from_counts(
@@ -190,7 +262,7 @@ def _overhead_from_counts(
     faults, which is at most the true acceptance. With no checks every
     attempt is accepted, so the acceptance is 1 and the overhead exact.
     """
-    r, _, _, w = family
+    r, _, w = family
     prep = accounting.prep_region(n, native_plus)
     checks = accounting.check_region(r, r * w, native_plus)
     faulty_checks = _faulty(checks, noisy_checks)
@@ -270,6 +342,56 @@ def plog_bound(
     return _plog_from_counts(
         counts, noise, n, family, noisy_checks, native_plus
     )
+
+
+def plog_terms(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    noise: NoiseModel,
+    *,
+    noisy_checks: bool = True,
+    restricted_checks: bool = False,
+    native_plus: bool = False,
+) -> list[ChunkTerms]:
+    """Return the terms of :func:`plog_bound`, one entry per chunk.
+
+    :func:`plog_bound` is the sum of the entries' :attr:`ChunkTerms.bound`.
+    Without checks the bound is a single fault probability, with no terms.
+
+    Parameters
+    ----------
+    circuit, n, t, noise, noisy_checks, restricted_checks, native_plus
+        As in :func:`plog_bound`.
+    r : int
+        Number of checks per chunk. Must be at least 1.
+
+    Returns
+    -------
+    list of ChunkTerms
+        The terms of each chunk, in chunk order.
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1`` or ``r < 1``.
+    """
+    _check_sizes(n, r)
+    if r < 1:
+        raise ValueError(f"r must be at least 1, got {r}")
+    family = _check_family(n, r, restricted_checks)
+    return [
+        _chunk_terms(
+            noise,
+            n,
+            *accounting.gate_counts(chunk),
+            family,
+            noisy_checks,
+            native_plus,
+        )
+        for chunk in protocol.chunk_circuit(circuit, n, t)
+    ]
 
 
 def overhead_bound(

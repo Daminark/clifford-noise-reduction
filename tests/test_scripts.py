@@ -13,6 +13,9 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def _load(name: str) -> ModuleType:
+    # A script imports its siblings, as it would when run from scripts/.
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
     spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
     assert spec is not None
     assert spec.loader is not None
@@ -96,3 +99,69 @@ def test_regret_refuses_a_file_made_with_other_settings(tmp_path):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(SystemExit, match="other settings"):
         regret.main(["--quick", "--output", str(path), "--workers", "1"])
+
+
+def test_sharpness_quick_run_records_every_point_and_resumes(tmp_path):
+    regret = _load("regret")
+    sharpness = _load("sharpness")
+    source = tmp_path / "regret.json"
+    path = tmp_path / "sharpness.json"
+    regret.main(["--quick", "--output", str(source), "--workers", "1"])
+    arguments = ["--quick", "--regret", str(source), "--output", str(path)]
+    sharpness.main(arguments)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    results = json.loads(source.read_text(encoding="utf-8"))
+    config = sharpness.QUICK
+
+    chosen = {
+        regret._key(
+            row["regime"],
+            row["n"],
+            row["circuit"],
+            row["family"],
+            *row["best_pair_pick"],
+        )
+        for row in regret.outcomes(results)
+        if isinstance(row["best_pair_pick"], list)
+        and row["best_pair_pick"][1] >= 1
+    }
+    assert set(data["waterfall"]) == chosen
+    for row in sharpness.waterfall(data, results):
+        assert list(row["stages"]) == list(sharpness.STAGES)
+        assert all(math.isfinite(value) for value in row["stages"].values())
+        assert row["regions"]["bound"]["resource"] > 0
+    assert len(data["positions"]) == (
+        len(config.position_sizes)
+        * config.position_circuits
+        * len(sharpness.GENERATORS)
+        * len(regret.FAMILIES)
+    )
+    for profile in data["positions"].values():
+        assert len(profile["damaging"]) == config.bins + 1
+        for damaging, caught in zip(
+            profile["damaging"], profile["caught"], strict=True
+        ):
+            assert 0.0 <= caught <= damaging
+    assert "finished" in data["runs"][0]
+
+    sharpness.main(arguments)
+    again = json.loads(path.read_text(encoding="utf-8"))
+    assert again["waterfall"] == data["waterfall"]
+    assert again["positions"] == data["positions"]
+    assert len(again["runs"]) == 2
+
+
+def test_sharpness_refuses_a_file_made_from_other_results(tmp_path):
+    regret = _load("regret")
+    sharpness = _load("sharpness")
+    source = tmp_path / "regret.json"
+    path = tmp_path / "sharpness.json"
+    regret.main(["--quick", "--output", str(source), "--workers", "1"])
+    arguments = ["--quick", "--regret", str(source), "--output", str(path)]
+    sharpness.main(arguments)
+    source.write_text(
+        source.read_text(encoding="utf-8") + " ", encoding="utf-8"
+    )
+
+    with pytest.raises(SystemExit, match="other regret results"):
+        sharpness.main(arguments)

@@ -413,3 +413,55 @@ def test_bounds_are_infinite_when_no_attempt_can_succeed():
 
     assert bounds.plog_bound(circuit, 2, 1, 1, certain_fault) == math.inf
     assert bounds.overhead_bound(circuit, 2, 1, 1, certain_fault) == math.inf
+
+
+@given(
+    n=st.integers(1, 4),
+    size=st.integers(0, 30),
+    t=st.integers(1, 3),
+    r=st.integers(1, 6),
+    noisy_checks=st.booleans(),
+    restricted_checks=st.booleans(),
+    native_plus=st.booleans(),
+    seed=st.integers(0, 2**32 - 1),
+)
+def test_plog_terms_add_up_to_the_bound(
+    n, size, t, r, noisy_checks, restricted_checks, native_plus, seed
+):
+    circuit = seeded_circuit(n, size, seed)
+    options = {
+        "noisy_checks": noisy_checks,
+        "restricted_checks": restricted_checks,
+        "native_plus": native_plus,
+    }
+
+    terms = bounds.plog_terms(circuit, n, t, r, UNIFORM, **options)
+
+    assert len(terms) == t
+    assert sum(term.bound for term in terms) == pytest.approx(
+        bounds.plog_bound(circuit, n, t, r, UNIFORM, **options), rel=1e-12
+    )
+    for term in terms:
+        assert term.checks == r
+        if not noisy_checks:
+            assert term.check == 0.0
+
+
+@pytest.mark.parametrize("n", [1, 2, 5])
+def test_plog_terms_carry_each_familys_worst_case_miss(n):
+    circuit = seeded_circuit(n, 10, seed=1)
+
+    (uniform,) = bounds.plog_terms(circuit, n, 1, 3, UNIFORM)
+    (restricted,) = bounds.plog_terms(
+        circuit, n, 1, 3, UNIFORM, restricted_checks=True
+    )
+
+    assert uniform.per_check_miss == 0.5
+    assert uniform.miss == 0.125
+    assert uniform.escapes == 1.75
+    assert restricted.per_check_miss == pytest.approx(1 - 2 / (3 * n))
+
+
+def test_plog_terms_reject_a_bound_without_checks():
+    with pytest.raises(ValueError, match="r must be at least 1"):
+        bounds.plog_terms(stim.Circuit("H 0"), 1, 1, 0, UNIFORM)
