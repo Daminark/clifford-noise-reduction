@@ -32,7 +32,8 @@ import stim
 from matplotlib_inline.backend_inline import set_matplotlib_formats
 from myst_nb import glue
 
-from clinr import accounting
+from clinr import bounds
+from clinr.noise_models import NoiseModel
 
 set_matplotlib_formats("svg")
 root = Path.cwd().parents[1]
@@ -87,9 +88,7 @@ for row in rows:
     case = regret._key(row["regime"], row["n"], row["circuit"], row["family"])
     noise = rates[row["regime"]]
     text = data["circuits"][str(row["n"])][row["circuit"]]
-    s1, s2 = accounting.gate_counts(stim.Circuit(text))
-    # The direct implementation's bound: the probability that some gate faults.
-    direct_bound = 1 - (1 - noise["p1"]) ** s1 * (1 - noise["p2"]) ** s2
+    direct_bound = bounds.direct_plog_bound(stim.Circuit(text), NoiseModel(**noise))
     direct_slack.append(direct_bound / row["direct"])
     pick = row["best_pick"]
     if isinstance(pick, list):

@@ -165,3 +165,48 @@ def test_sharpness_refuses_a_file_made_from_other_results(tmp_path):
 
     with pytest.raises(SystemExit, match="other regret results"):
         sharpness.main(arguments)
+
+
+def test_payoff_quick_run_records_every_unit_and_resumes(tmp_path):
+    payoff = _load("payoff")
+    path = tmp_path / "payoff.json.gz"
+    arguments = ["--quick", "--output", str(path), "--workers", "1"]
+    payoff.main(arguments)
+    data = payoff.load(path)
+    config = payoff.QUICK
+
+    cases = list(payoff.cases(config, data["sizes"]))
+    circuits = sum(count for *_, count in cases)
+    assert len(data["direct"]) == circuits
+    assert len(data["units"]) == circuits * 2
+    for unit in data["units"].values():
+        assert unit["r"] >= 1
+        for t in unit["choice"].values():
+            if t is not None:
+                overhead = unit["pilots"][str(t)][1]
+                assert str(t) in unit["estimates"]
+                assert overhead <= max(config.curve_budgets)
+    rows = payoff.outcomes(data)
+    budgets = {
+        0: len(config.curve_budgets),
+        1: len(config.map_budgets),
+    }
+    assert len(rows) == sum(
+        2 * count * budgets[part] for part, *_, count in cases
+    )
+    for row in rows:
+        assert math.isnan(row["rate"]) == (row["t"] is None)
+    assert "finished" in data["runs"][0]
+
+    payoff.main(arguments)
+    again = payoff.load(path)
+    assert again["units"] == data["units"]
+    assert again["direct"] == data["direct"]
+    assert len(again["runs"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("size", "n", "r"), [(2, 3, 1), (5, 3, 1), (29, 3, 3), (625, 25, 4)]
+)
+def test_payoff_takes_at_least_one_check(size, n, r):
+    assert _load("payoff").rule_r(size, n) == r

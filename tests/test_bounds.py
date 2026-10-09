@@ -465,3 +465,13 @@ def test_plog_terms_carry_each_familys_worst_case_miss(n):
 def test_plog_terms_reject_a_bound_without_checks():
     with pytest.raises(ValueError, match="r must be at least 1"):
         bounds.plog_terms(stim.Circuit("H 0"), 1, 1, 0, UNIFORM)
+
+
+def test_direct_plog_bound_charges_each_gate_at_its_own_rate():
+    noise = noise_models.NoiseModel(p1=0.001, p2=0.002, p_m=0.3, p_prep=0.4)
+    circuit = stim.Circuit("H 0\nS 1\nCX 0 1")
+
+    bound = bounds.direct_plog_bound(circuit, noise)
+
+    assert bound == pytest.approx(1 - (1 - 0.001) ** 2 * (1 - 0.002))
+    assert bounds.direct_plog_bound(stim.Circuit(), noise) == 0.0

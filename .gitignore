@@ -28,4 +28,5 @@ docs/_build/
 
 # Small runs of the experiment scripts, for checking them.
 results/*-quick.json
+results/*-quick.json.gz
 results/*.tmp

@@ -39,6 +39,7 @@ from .noise_models import NoiseModel
 
 __all__ = [
     "ChunkTerms",
+    "direct_plog_bound",
     "plog_bound",
     "plog_terms",
     "overhead_bound",
@@ -344,6 +345,32 @@ def plog_bound(
     )
 
 
+def direct_plog_bound(circuit: stim.Circuit, noise: NoiseModel) -> float:
+    """Bound the logical error rate of the direct implementation of a circuit.
+
+    The probability that some gate of ``circuit`` faults, the paper's
+    ``g_p(s)`` with one rate per kind of gate. A logical error needs a
+    fault, so this is an upper bound, and nearly exact to first order: a
+    single fault in a Clifford circuit leaves a nontrivial Pauli on its
+    output.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The Clifford circuit ``C``, as accepted by
+        :func:`clinr.accounting.gate_counts`.
+    noise : NoiseModel
+
+    Returns
+    -------
+    float
+        An upper bound on the logical error rate of the circuit that
+        :func:`clinr.protocol.build_direct` builds.
+    """
+    s1, s2 = accounting.gate_counts(circuit)
+    return _fault_prob(noise, Region(n1=s1, n2=s2, nm=0, n_prep=0))
+
+
 def plog_terms(
     circuit: stim.Circuit,
     n: int,
@@ -513,7 +540,7 @@ def choose_tr(
         _check_family(n, r, restricted_checks) for r in range(r_max + 1)
     ]
     best: tuple[int, int] | None = None
-    best_plog = _fault_prob(noise, Region(n1=s1, n2=s2, nm=0, n_prep=0))
+    best_plog = direct_plog_bound(circuit, noise)
     for t in range(1, upper_t + 1):
         chunks = protocol.chunk_circuit(circuit, n, t)
         counts = [accounting.gate_counts(chunk) for chunk in chunks]
