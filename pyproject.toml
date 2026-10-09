@@ -58,7 +58,7 @@ branch = true                  # count untaken branches, not only lines
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 99                # the current level; raise it, never lower it
+fail_under = 100               # the current level; raise it, never lower it
 
 [tool.mypy]
 files = ["src", "tests", "scripts"]

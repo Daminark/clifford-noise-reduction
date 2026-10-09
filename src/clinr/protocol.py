@@ -7,7 +7,9 @@ caller supplies (:func:`clinr.checks.draw_checks` draws them).
 All ``r`` checks of a chunk are measured before its resource is accepted or
 discarded, where the paper restarts at the first nontrivial outcome; the two
 accept the same shots.
-:func:`build_direct` builds the baseline, ``C`` applied directly.
+:func:`build_direct` builds the baseline, ``C`` applied directly, and
+:func:`build_cznr_tr` builds ``CZNR_{t,r}(C)``, the variant of [1]_, App. E,
+for circuits of ``CZ`` gates, with ``n`` resource qubits per chunk.
 Both carry a Choi harness that reads out whether the implemented channel is
 ``C``, and both are exact at zero noise: every detector and observable is
 deterministic.
@@ -62,6 +64,8 @@ __all__ = [
     "chunk_circuit",
     "build_clinr_tr",
     "build_direct",
+    "graph_state_gens",
+    "build_cznr_tr",
 ]
 
 # Stim's Pauli codes, as returned by indexing a PauliString, to letters.
@@ -623,6 +627,202 @@ def build_clinr_tr(
         out.append("MPP", _pauli_to_mpp_targets(gen))
         # The generator's output-block part, in logical indexing.
         conj = stim.PauliString([gen[qubit] for qubit in data_in])
+        records = [stim.target_rec(-1)]
+        for index, pauli in frame.items():
+            if not pauli.commutes(conj):
+                records.append(stim.target_rec(index - out.num_measurements))
+        out.append("OBSERVABLE_INCLUDE", records, observable)
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# CZNR: noise reduction for circuits of CZ gates
+# ---------------------------------------------------------------------------
+def _check_cz_only(circuit: stim.Circuit) -> None:
+    """Raise ``ValueError`` unless every gate of ``circuit`` is a ``CZ``."""
+    others = sorted({name for name, _ in gate_list(circuit)} - {"CZ"})
+    if others:
+        raise ValueError(f"CZNR applies to CZ gates only, got {others}")
+
+
+def graph_state_gens(tableau: stim.Tableau) -> list[stim.PauliString]:
+    """Return generators of the stabilizer group of a graph state.
+
+    For the unitary ``U_G`` of a circuit of ``CZ`` gates, the graph state
+    ``U_G |+>^n`` is stabilized by ``U_G X_i U_G^dag = X_i prod_j Z_j``,
+    the product over the neighbors ``j`` of ``i`` in the graph ``G`` whose
+    edges are the ``CZ`` gates taken with odd multiplicity.
+
+    Parameters
+    ----------
+    tableau : stim.Tableau
+        Tableau of ``U_G``, on at least one qubit, padded to its full width
+        as for :func:`stabilizer_gens`.
+
+    Returns
+    -------
+    list of stim.PauliString
+        The ``n`` generators, in qubit order, on ``n`` qubits, signs
+        dropped.
+
+    Raises
+    ------
+    ValueError
+        If ``tableau`` acts on no qubits.
+    """
+    n = len(tableau)
+    if n < 1:
+        raise ValueError("tableau must act on at least one qubit")
+    gens = []
+    for i in range(n):
+        image = tableau.x_output(i)
+        gens.append(stim.PauliString([image[j] for j in range(n)]))
+    return gens
+
+
+def build_cznr_tr(
+    circuit: stim.Circuit,
+    n: int,
+    checks: list[list[stim.PauliString]],
+    noise: NoiseModel,
+    *,
+    noisy_checks: bool = True,
+    native_plus: bool = False,
+) -> stim.Circuit:
+    """Build ``CZNR_{t,r}(C)`` of arXiv:2407.06583, App. E, with the harness.
+
+    ``C`` must consist of ``CZ`` gates. Each chunk ``C_k`` is applied by
+    one-bit teleportation through its graph state: ``n`` resource qubits
+    are prepared in ``|+>`` and the chunk's gates applied to them; the
+    checks are measured; then each data qubit ``i`` takes a ``CX`` from
+    resource qubit ``i`` and is measured, which leaves the chunk's output
+    on the resource qubits up to the Pauli
+    ``U_{G_k} X_i U_{G_k}^dag`` for each nontrivial outcome. As in
+    :func:`build_clinr_tr`, that correction is tracked as a Pauli frame
+    and folded into the observables, all ``r`` checks of an attempt are
+    measured, and the Choi harness is noiseless.
+
+    Register layout, ``3n + 1`` qubits: the first chunk's data on
+    ``[0, n)``, its resource on ``[n, 2n)``, the Choi reference on
+    ``[2n, 3n)`` and the check ancilla at ``3n``. After each chunk the data
+    and resource blocks exchange roles by relabeling.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The circuit ``C``, of ``CZ`` gates only, as accepted by
+        :func:`chunk_circuit`, on qubits ``[0, n)``.
+    n : int
+        Number of data qubits. Must be at least 1.
+    checks : list of list of stim.PauliString
+        One list of ``r`` checks per chunk, the same ``r`` for every chunk,
+        as :func:`clinr.checks.draw_cznr_checks` returns them: length
+        ``n``, each a stabilizer of its chunk's graph state; the identity
+        is allowed. There must be at least one chunk.
+    noise : NoiseModel
+    noisy_checks : bool, optional
+        As in :func:`build_clinr_tr`.
+    native_plus : bool, optional
+        As in :func:`build_clinr_tr`.
+
+    Returns
+    -------
+    stim.Circuit
+        On ``3n + 1`` qubits, with one detector per check in chunk order and
+        ``2n`` observables, the Choi stabilizers of ``C``; exact at zero
+        noise. Every noise channel is tagged with its region in chunk
+        ``k``: ``prep/k`` for the ``|+>`` of the resource, ``gates/k`` for
+        the chunk's gates, ``check/k/j`` for its ``j``-th check, and
+        ``teleport/k`` for the teleportation.
+
+    Raises
+    ------
+    ValueError
+        If ``circuit`` has a gate other than ``CZ`` or acts on a qubit of
+        index ``n`` or more, if the chunks have different numbers of checks,
+        or if a check does not have length ``n`` or does not stabilize its
+        chunk's graph state.
+    """
+    if len({len(chunk_checks) for chunk_checks in checks}) > 1:
+        raise ValueError(
+            "every chunk needs the same number of checks, got "
+            f"{[len(chunk_checks) for chunk_checks in checks]}"
+        )
+    _check_cz_only(circuit)
+    full_tableau = _pad_to_width(circuit, n).to_tableau()
+    chunks = chunk_circuit(circuit, n, len(checks))
+    data = list(range(n))
+    resource = list(range(n, 2 * n))
+    ref = list(range(2 * n, 3 * n))
+    anc = 3 * n
+    total = 3 * n + 1
+    out = stim.Circuit()
+    frame: dict[int, stim.PauliString] = {}
+
+    # Choi input: pair each reference qubit with the first chunk's input.
+    for i in range(n):
+        out.append("H", [ref[i]])
+        out.append("CX", [ref[i], data[i]])
+
+    for k, (chunk, chunk_checks) in enumerate(
+        zip(chunks, checks, strict=True)
+    ):
+        tableau = chunk.to_tableau()
+        gens = graph_state_gens(tableau)
+        for check in chunk_checks:
+            if len(check) != n:
+                raise ValueError(
+                    f"chunk {k}: check has length {len(check)}, expected {n}"
+                )
+            if not all(check.commutes(gen) for gen in gens):
+                raise ValueError(
+                    f"chunk {k}: check {check} does not stabilize the "
+                    "graph state"
+                )
+
+        # Protected region: prepare this chunk's graph state.
+        prep, gates, teleport = f"prep/{k}", f"gates/{k}", f"teleport/{k}"
+        _prep_plus_noisy(out, resource, noise, prep, native_plus=native_plus)
+        for name, targets in gate_list(chunk):
+            _apply_noisy(
+                out, name, [resource[qubit] for qubit in targets], noise, gates
+            )
+
+        # Offline checks on the graph state.
+        for j, logical in enumerate(chunk_checks):
+            check = stim.PauliString(total)
+            for i in range(n):
+                check[resource[i]] = logical[i]
+            _measure_stabilizer_noisy(
+                out,
+                check,
+                anc,
+                noise if noisy_checks else _NOISELESS,
+                f"check/{k}/{j}",
+                native_plus=native_plus,
+            )
+            out.append("DETECTOR", [stim.target_rec(-1)])
+
+        # One-bit teleportation of the data into the graph state.
+        for i in range(n):
+            _apply_noisy(out, "CX", [resource[i], data[i]], noise, teleport)
+        frame = {index: tableau(pauli) for index, pauli in frame.items()}
+        base = out.num_measurements
+        _measure_noisy(out, data, noise, teleport)  # m_i at base + i
+        for i in range(n):
+            frame[base + i] = tableau.x_output(i)
+
+        # The resource now holds the data; the measured block is the next
+        # chunk's resource.
+        data, resource = resource, data
+
+    # Choi observables against the full circuit's tableau.
+    for observable, gen in enumerate(
+        stabilizer_gens(full_tableau, ref, data, total)
+    ):
+        out.append("MPP", _pauli_to_mpp_targets(gen))
+        conj = stim.PauliString([gen[qubit] for qubit in data])
         records = [stim.target_rec(-1)]
         for index, pauli in frame.items():
             if not pauli.commutes(conj):

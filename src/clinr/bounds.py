@@ -20,6 +20,9 @@ They differ from Theorem 1 mostly in what they count:
 - no conditioning on acceptance when ``r == 0``, since every attempt is
   then accepted.
 
+:func:`cznr_plog_bound` and :func:`cznr_overhead_bound` do the same for
+CZNR, rederiving Theorem 3 of [1]_ with the same departures.
+
 References
 ----------
 .. [1] N. Delfosse and E. Tham, "Low-cost noise reduction for Clifford
@@ -44,6 +47,8 @@ __all__ = [
     "plog_terms",
     "overhead_bound",
     "choose_tr",
+    "cznr_plog_bound",
+    "cznr_overhead_bound",
 ]
 
 
@@ -142,6 +147,32 @@ class ChunkTerms(NamedTuple):
         return numerator / self.acceptance
 
 
+class _Scheme(NamedTuple):
+    """The regions a scheme adds around each chunk: CliNR or CZNR."""
+
+    n: int
+    prep: Region
+    teleport: Region
+
+
+def _clinr(n: int, native_plus: bool) -> _Scheme:
+    """Return CliNR's scheme on ``n`` data qubits."""
+    return _Scheme(
+        n,
+        accounting.prep_region(n, native_plus),
+        accounting.teleport_region(n),
+    )
+
+
+def _cznr(n: int, native_plus: bool) -> _Scheme:
+    """Return CZNR's scheme on ``n`` data qubits."""
+    return _Scheme(
+        n,
+        accounting.cznr_prep_region(n, native_plus),
+        accounting.cznr_teleport_region(n),
+    )
+
+
 def _check_sizes(n: int, r: int, name: str = "r") -> None:
     """Raise ``ValueError`` unless ``n >= 1`` and ``r >= 0``, naming ``r``."""
     if n < 1:
@@ -173,7 +204,7 @@ def _faulty(checks: Region, noisy_checks: bool) -> Region:
 
 def _chunk_plog_bound(
     noise: NoiseModel,
-    n: int,
+    scheme: _Scheme,
     s1: int,
     s2: int,
     family: _Family,
@@ -189,19 +220,18 @@ def _chunk_plog_bound(
     faults.
     """
     if family.r == 0:
-        prep = accounting.prep_region(n, native_plus)
-        resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
-        return _fault_prob(
-            noise, accounting.add(resource, accounting.teleport_region(n))
+        resource = accounting.add(
+            scheme.prep, Region(n1=s1, n2=s2, nm=0, n_prep=0)
         )
+        return _fault_prob(noise, accounting.add(resource, scheme.teleport))
     return _chunk_terms(
-        noise, n, s1, s2, family, noisy_checks, native_plus
+        noise, scheme, s1, s2, family, noisy_checks, native_plus
     ).bound
 
 
 def _chunk_terms(
     noise: NoiseModel,
-    n: int,
+    scheme: _Scheme,
     s1: int,
     s2: int,
     family: _Family,
@@ -211,7 +241,7 @@ def _chunk_terms(
     """Return the terms of one chunk's bound; requires ``family.r >= 1``."""
     r, q, w = family
     assert r >= 1, "the bound without checks has no terms"
-    prep = accounting.prep_region(n, native_plus)
+    prep = scheme.prep
     resource = accounting.add(prep, Region(n1=s1, n2=s2, nm=0, n_prep=0))
     one_check = _faulty(
         accounting.check_region(1, w, native_plus), noisy_checks
@@ -222,7 +252,7 @@ def _chunk_terms(
     return ChunkTerms(
         resource=_fault_prob(noise, resource),
         check=_fault_prob(noise, one_check),
-        teleport=_fault_prob(noise, accounting.teleport_region(n)),
+        teleport=_fault_prob(noise, scheme.teleport),
         acceptance=_no_fault_prob(
             noise, accounting.protected_region(prep, s1, s2, checks)
         ),
@@ -234,16 +264,16 @@ def _chunk_terms(
 def _plog_from_counts(
     counts: list[tuple[int, int]],
     noise: NoiseModel,
-    n: int,
-    family: _Family,
+    scheme: _Scheme,
+    families: list[_Family],
     noisy_checks: bool,
     native_plus: bool,
 ) -> float:
-    """Return the sum of the chunk bounds for chunks of these gate counts."""
+    """Return the sum of the chunk bounds, one family per chunk."""
     total = 0.0
-    for s1, s2 in counts:
+    for (s1, s2), family in zip(counts, families, strict=True):
         total += _chunk_plog_bound(
-            noise, n, s1, s2, family, noisy_checks, native_plus
+            noise, scheme, s1, s2, family, noisy_checks, native_plus
         )
     return total
 
@@ -251,8 +281,8 @@ def _plog_from_counts(
 def _overhead_from_counts(
     counts: list[tuple[int, int]],
     noise: NoiseModel,
-    n: int,
-    family: _Family,
+    scheme: _Scheme,
+    families: list[_Family],
     noisy_checks: bool,
     native_plus: bool,
 ) -> float:
@@ -263,20 +293,21 @@ def _overhead_from_counts(
     faults, which is at most the true acceptance. With no checks every
     attempt is accepted, so the acceptance is 1 and the overhead exact.
     """
-    r, _, w = family
-    prep = accounting.prep_region(n, native_plus)
-    checks = accounting.check_region(r, r * w, native_plus)
-    faulty_checks = _faulty(checks, noisy_checks)
-    no_fault = [
-        1.0
-        if r == 0
-        else _no_fault_prob(
-            noise, accounting.protected_region(prep, s1, s2, faulty_checks)
+    regions, no_fault = [], []
+    for (s1, s2), (r, _, w) in zip(counts, families, strict=True):
+        checks = accounting.check_region(r, r * w, native_plus)
+        regions.append(checks)
+        protected = accounting.protected_region(
+            scheme.prep, s1, s2, _faulty(checks, noisy_checks)
         )
-        for s1, s2 in counts
-    ]
+        no_fault.append(1.0 if r == 0 else _no_fault_prob(noise, protected))
     return accounting.expected_overhead(
-        counts, n, prep, [checks] * len(counts), no_fault
+        counts,
+        scheme.n,
+        scheme.prep,
+        regions,
+        no_fault,
+        teleport=scheme.teleport,
     )
 
 
@@ -341,7 +372,12 @@ def plog_bound(
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _plog_from_counts(
-        counts, noise, n, family, noisy_checks, native_plus
+        counts,
+        noise,
+        _clinr(n, native_plus),
+        [family] * t,
+        noisy_checks,
+        native_plus,
     )
 
 
@@ -411,7 +447,7 @@ def plog_terms(
     return [
         _chunk_terms(
             noise,
-            n,
+            _clinr(n, native_plus),
             *accounting.gate_counts(chunk),
             family,
             noisy_checks,
@@ -466,7 +502,12 @@ def overhead_bound(
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
     return _overhead_from_counts(
-        counts, noise, n, family, noisy_checks, native_plus
+        counts,
+        noise,
+        _clinr(n, native_plus),
+        [family] * t,
+        noisy_checks,
+        native_plus,
     )
 
 
@@ -545,10 +586,145 @@ def choose_tr(
         chunks = protocol.chunk_circuit(circuit, n, t)
         counts = [accounting.gate_counts(chunk) for chunk in chunks]
         for r, family in enumerate(families):
-            options = (noise, n, family, noisy_checks, native_plus)
+            options = (
+                noise,
+                _clinr(n, native_plus),
+                [family] * t,
+                noisy_checks,
+                native_plus,
+            )
             if _overhead_from_counts(counts, *options) > max_overhead:
                 continue
             value = _plog_from_counts(counts, *options)
             if value < best_plog:
                 best_plog, best = value, (t, r)
     return best
+
+
+def _cznr_families(
+    chunks: list[stim.Circuit], n: int, r: int, restricted_checks: bool
+) -> list[_Family]:
+    """Return the family of each chunk's checks under CZNR.
+
+    A damaging fault on a graph state anticommutes with at least one of its
+    ``n`` generators, since they generate the stabilizer group, so a
+    generator drawn uniformly misses it with probability at most
+    ``1 - 1/n``; ``Z`` on one qubit attains this. A uniform element of the
+    group misses it with probability ``1/2``, and has weight at most ``n``.
+    """
+    if not restricted_checks:
+        return [_Family(r, 0.5, n)] * len(chunks)
+    families = []
+    for chunk in chunks:
+        gens = protocol.graph_state_gens(chunk.to_tableau())
+        families.append(
+            _Family(r, (n - 1) / n, max(gen.weight for gen in gens))
+        )
+    return families
+
+
+def cznr_plog_bound(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    noise: NoiseModel,
+    *,
+    noisy_checks: bool = True,
+    restricted_checks: bool = False,
+    native_plus: bool = False,
+) -> float:
+    """Bound the logical error rate of ``CZNR_{t,r}`` applied to ``circuit``.
+
+    The bound of :func:`plog_bound`, with CZNR's regions in place of
+    CliNR's: Theorem 3 of arXiv:2407.06583 with the same departures from
+    the paper as :func:`plog_bound`'s from Theorem 1. A uniform check misses
+    a damaging fault with probability ``1/2`` and weighs at most ``n``; a
+    generator ``X_i prod_j Z_j`` misses it with probability at most
+    ``1 - 1/n`` and weighs at most one more than the chunk's largest
+    degree.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``.
+    n, t, r, noise, noisy_checks, native_plus
+        As in :func:`plog_bound`.
+    restricted_checks : bool, optional
+        If True, price draws from the generators of each chunk's graph
+        state; if False, from its full stabilizer group, as
+        :func:`clinr.checks.draw_cznr_checks` draws them.
+
+    Returns
+    -------
+    float
+        An upper bound on the logical error rate of the circuit that
+        :func:`clinr.protocol.build_cznr_tr` builds with the same options,
+        averaged over the checks :func:`clinr.checks.draw_cznr_checks`
+        draws, as for :func:`plog_bound`.
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
+    """
+    _check_sizes(n, r)
+    protocol._check_cz_only(circuit)
+    chunks = protocol.chunk_circuit(circuit, n, t)
+    return _plog_from_counts(
+        [accounting.gate_counts(chunk) for chunk in chunks],
+        noise,
+        _cznr(n, native_plus),
+        _cznr_families(chunks, n, r, restricted_checks),
+        noisy_checks,
+        native_plus,
+    )
+
+
+def cznr_overhead_bound(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    noise: NoiseModel,
+    *,
+    noisy_checks: bool = True,
+    restricted_checks: bool = False,
+    native_plus: bool = False,
+) -> float:
+    """Bound the gate overhead of ``CZNR_{t,r}`` applied to ``circuit``.
+
+    :func:`overhead_bound` with CZNR's regions and the families of
+    :func:`cznr_plog_bound`.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``, with
+        at least one gate.
+    n, t, r, noise, noisy_checks, restricted_checks, native_plus
+        As in :func:`cznr_plog_bound`.
+
+    Returns
+    -------
+    float
+        An upper bound on the expected number of operations per gate of
+        ``circuit``, infinite when some chunk with checks can never be
+        accepted.
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
+    """
+    _check_sizes(n, r)
+    protocol._check_cz_only(circuit)
+    chunks = protocol.chunk_circuit(circuit, n, t)
+    return _overhead_from_counts(
+        [accounting.gate_counts(chunk) for chunk in chunks],
+        noise,
+        _cznr(n, native_plus),
+        _cznr_families(chunks, n, r, restricted_checks),
+        noisy_checks,
+        native_plus,
+    )

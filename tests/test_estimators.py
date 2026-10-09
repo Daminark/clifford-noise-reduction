@@ -292,6 +292,27 @@ def test_direct_sweep_rejects_an_empty_list_of_circuits():
         estimators.sweep_direct([], 2, NOISELESS, 10, np.random.default_rng(0))
 
 
+def test_sweeps_estimate_each_circuit_in_turn():
+    batch = [seeded_circuit(2, 5, seed) for seed in range(3)]
+
+    clinr = estimators.sweep_clinr(
+        batch, 2, 1, 1, NOISELESS, 10, np.random.default_rng(0)
+    )
+    direct = estimators.sweep_direct(
+        batch, 2, NOISELESS, 10, np.random.default_rng(0)
+    )
+
+    assert [estimate.size for estimate in clinr] == [5, 5, 5]
+    assert [estimate.chunk_checks for estimate in clinr] == [(1,)] * 3
+    assert [estimate.errors for estimate in direct] == [0, 0, 0]
+
+
+def test_estimate_interval_is_the_wilson_interval_of_its_counts():
+    estimate = draw(errors=3, accepted=900)
+
+    assert estimate.interval(0.9) == estimators.wilson_interval(3, 900, 0.9)
+
+
 # ---------------------------------------------------------------------------
 # gate_overhead and gate_overhead_over_draws
 # ---------------------------------------------------------------------------

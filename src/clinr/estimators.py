@@ -1,10 +1,10 @@
-"""Monte Carlo estimates of CliNR and of the direct implementation.
+"""Monte Carlo estimates of CliNR, CZNR and the direct implementation.
 
-:func:`estimate_clinr` and :func:`estimate_direct` sample the circuits
-:mod:`clinr.protocol` builds and return an :class:`Estimate` of raw counts,
-from which the point estimates, their intervals and the measured gate
-overhead are all computed, so a sweep never has to be rerun for another
-statistic.
+:func:`estimate_clinr`, :func:`estimate_cznr` and :func:`estimate_direct`
+sample the circuits :mod:`clinr.protocol` builds and return an
+:class:`Estimate` of raw counts, from which the point estimates, their
+intervals and the measured gate overhead are all computed, so a sweep
+never has to be rerun for another statistic.
 
 A CliNR shot is accepted when every check of every chunk passes, and the
 logical error rate is taken over accepted shots. This conditioning gives the
@@ -42,6 +42,7 @@ __all__ = [
     "wilson_interval",
     "Estimate",
     "estimate_clinr",
+    "estimate_cznr",
     "estimate_direct",
     "sweep_clinr",
     "sweep_direct",
@@ -145,6 +146,9 @@ class Estimate:
         The options the circuit was built and its checks drawn with, as in
         :func:`estimate_clinr`. The direct implementation keeps the
         defaults.
+    cznr : bool, optional
+        True for an estimate of CZNR (:func:`estimate_cznr`), whose checks
+        weigh at most ``n``, and at least 1 each if ``restricted_checks``.
 
     The four per-chunk tuples have one length: the number of chunks, or
     zero for the direct implementation. All counts are non-negative.
@@ -168,6 +172,7 @@ class Estimate:
     noisy_checks: bool = True
     restricted_checks: bool = False
     native_plus: bool = False
+    cznr: bool = False
 
     def __post_init__(self) -> None:
         """Check the constraints stated in the class docstring."""
@@ -215,9 +220,11 @@ class Estimate:
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
             )
-        least, worst = (
-            (1, self.n + 1) if self.restricted_checks else (0, 2 * self.n)
-        )
+        least = 1 if self.restricted_checks else 0
+        if self.cznr:
+            worst = self.n
+        else:
+            worst = self.n + 1 if self.restricted_checks else 2 * self.n
         if any(
             not least * checks <= weight <= worst * checks
             for weight, checks in zip(
@@ -389,6 +396,87 @@ def estimate_clinr(
     )
 
 
+def estimate_cznr(
+    circuit: stim.Circuit,
+    n: int,
+    t: int,
+    r: int,
+    noise: NoiseModel,
+    shots: int,
+    rng: np.random.Generator,
+    *,
+    noisy_checks: bool = True,
+    restricted_checks: bool = False,
+    native_plus: bool = False,
+) -> Estimate:
+    """Sample ``CZNR_{t,r}`` applied to a ``CZ`` circuit under fresh checks.
+
+    :func:`estimate_clinr` for CZNR: the checks are drawn by
+    :func:`clinr.checks.draw_cznr_checks` and the circuit built by
+    :func:`clinr.protocol.build_cznr_tr`.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+        The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``.
+    n, t, r, noise, shots, rng
+        As in :func:`estimate_clinr`.
+    noisy_checks, native_plus : bool, optional
+        As in :func:`clinr.protocol.build_cznr_tr`.
+    restricted_checks : bool, optional
+        As in :func:`clinr.checks.draw_cznr_checks`.
+
+    Returns
+    -------
+    Estimate
+        With ``cznr`` set, and one entry per chunk in each per-chunk tuple.
+
+    Raises
+    ------
+    TypeError
+        If ``rng`` is not a ``numpy.random.Generator``.
+    ValueError
+        If ``shots`` is not positive.
+    """
+    _check_rng(rng)
+    if shots < 1:
+        raise ValueError(f"shots must be positive, got {shots}")
+    drawn = checks.draw_cznr_checks(
+        circuit, n, t, r, rng, restricted_checks=restricted_checks
+    )
+    built = protocol.build_cznr_tr(
+        circuit,
+        n,
+        drawn,
+        noise,
+        noisy_checks=noisy_checks,
+        native_plus=native_plus,
+    )
+    per_chunk_checks = [len(chunk_checks) for chunk_checks in drawn]
+    accepted, errors, per_chunk = _tally(built, shots, rng, per_chunk_checks)
+    s1, s2 = accounting.gate_counts(circuit)
+    chunk_counts = tuple(
+        accounting.gate_counts(chunk)
+        for chunk in protocol.chunk_circuit(circuit, n, len(drawn))
+    )
+    return Estimate(
+        shots,
+        accepted,
+        errors,
+        s1,
+        s2,
+        n,
+        per_chunk,
+        tuple(per_chunk_checks),
+        tuple(sum(check.weight for check in chunk) for chunk in drawn),
+        chunk_counts,
+        noisy_checks=noisy_checks,
+        restricted_checks=restricted_checks,
+        native_plus=native_plus,
+        cznr=True,
+    )
+
+
 def estimate_direct(
     circuit: stim.Circuit,
     n: int,
@@ -507,6 +595,7 @@ def _setting(estimate: Estimate) -> dict[str, int | bool]:
         "noisy_checks": estimate.noisy_checks,
         "restricted_checks": estimate.restricted_checks,
         "native_plus": estimate.native_plus,
+        "cznr": estimate.cznr,
     }
 
 
@@ -702,6 +791,21 @@ def _check_overhead_input(estimate: Estimate) -> None:
         )
 
 
+def _scheme_regions(
+    estimate: Estimate,
+) -> tuple[accounting.Region, accounting.Region]:
+    """Return the resource preparation and teleportation of the scheme."""
+    if estimate.cznr:
+        return (
+            accounting.cznr_prep_region(estimate.n, estimate.native_plus),
+            accounting.cznr_teleport_region(estimate.n),
+        )
+    return (
+        accounting.prep_region(estimate.n, estimate.native_plus),
+        accounting.teleport_region(estimate.n),
+    )
+
+
 def _check_regions(estimate: Estimate) -> list[accounting.Region]:
     """Return each chunk's check region at the weights ``estimate`` drew."""
     return [
@@ -725,8 +829,8 @@ def gate_overhead(estimate: Estimate) -> float:
     Parameters
     ----------
     estimate : Estimate
-        From :func:`estimate_clinr`, with at least one gate and every chunk
-        accepting at least one shot.
+        From :func:`estimate_clinr` or :func:`estimate_cznr`, with at least
+        one gate and every chunk accepting at least one shot.
 
     Returns
     -------
@@ -738,12 +842,14 @@ def gate_overhead(estimate: Estimate) -> float:
         If ``estimate`` has no chunks or a chunk accepted no shots.
     """
     _check_overhead_input(estimate)
+    prep, teleport = _scheme_regions(estimate)
     return accounting.expected_overhead(
         list(estimate.chunk_counts),
         estimate.n,
-        accounting.prep_region(estimate.n, estimate.native_plus),
+        prep,
         _check_regions(estimate),
         [accepted / estimate.shots for accepted in estimate.chunk_accepted],
+        teleport=teleport,
     )
 
 
@@ -800,7 +906,7 @@ def gate_overhead_over_draws(
         deviations = [overhead - point for overhead in overheads]
     else:
         first = estimates[0]
-        prep = accounting.prep_region(first.n, first.native_plus)
+        prep, teleport = _scheme_regions(first)
         # Each draw's operations per attempt and acceptance, chunk by chunk.
         operations = [
             [
@@ -837,6 +943,7 @@ def gate_overhead_over_draws(
                     prep,
                     _check_regions(estimate),
                     mean_acc,
+                    teleport=teleport,
                 )
                 for estimate in estimates
             )

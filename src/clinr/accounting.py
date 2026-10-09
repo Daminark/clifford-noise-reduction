@@ -7,7 +7,8 @@ numbers for the same circuit.
 
 Per chunk the protocol of [1]_ has four regions: the resource preparation,
 the chunk's own gates, its checks, and the teleportation after the last
-check.
+check. CZNR, its variant for circuits of ``CZ`` gates ([1]_, App. E), has
+the same four, with a smaller preparation and teleportation.
 
 References
 ----------
@@ -57,6 +58,8 @@ __all__ = [
     "prep_region",
     "check_region",
     "teleport_region",
+    "cznr_prep_region",
+    "cznr_teleport_region",
     "protected_region",
     "expected_overhead",
 ]
@@ -185,6 +188,56 @@ def teleport_region(n: int) -> Region:
     return Region(n1=n, n2=n, nm=2 * n, n_prep=0)
 
 
+def cznr_prep_region(n: int, native_plus: bool) -> Region:
+    """Return the region of one graph-state preparation's ``|+>`` states.
+
+    ``n`` preparations, plus ``n`` Hadamards unless ``native_plus``. The
+    graph state's ``CZ`` gates are the chunk's own and are counted with it.
+
+    Parameters
+    ----------
+    n : int
+        Number of qubits of the graph state. Must be at least 1.
+    native_plus : bool
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
+    """
+    _check_n(n)
+    return Region(n1=0 if native_plus else n, n2=0, nm=0, n_prep=n)
+
+
+def cznr_teleport_region(n: int) -> Region:
+    """Return the region of CZNR's one-bit teleportation of ``n`` qubits.
+
+    ``n`` ``CX`` and ``n`` measurements: the ``2n`` of the paper's ``3n``
+    (arXiv:2407.06583, App. E) that remain when the Pauli correction is
+    tracked classically.
+
+    Parameters
+    ----------
+    n : int
+        Number of data qubits. Must be at least 1.
+
+    Returns
+    -------
+    Region
+
+    Raises
+    ------
+    ValueError
+        If ``n < 1``.
+    """
+    _check_n(n)
+    return Region(n1=0, n2=n, nm=n, n_prep=0)
+
+
 def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
     """Return the region of one attempt at a chunk, through its last check.
 
@@ -221,6 +274,8 @@ def expected_overhead(
     prep: Region,
     check_regions: list[Region],
     acceptance: list[float],
+    *,
+    teleport: Region | None = None,
 ) -> float:
     """Return the expected number of operations per gate of the circuit.
 
@@ -246,6 +301,9 @@ def expected_overhead(
         Each chunk's acceptance probability ``q_k``, in chunk order, in
         [0, 1]. Analytic bounds and measured frequencies are both accepted;
         the result is a bound or an estimate accordingly.
+    teleport : Region, optional
+        The teleportation each chunk pays once: :func:`teleport_region` by
+        default, :func:`cznr_teleport_region` for CZNR.
 
     Returns
     -------
@@ -273,7 +331,7 @@ def expected_overhead(
         raise ValueError(
             f"acceptance probabilities must lie in [0, 1], got {acceptance}"
         )
-    tail = sum(teleport_region(n))
+    tail = sum(teleport_region(n) if teleport is None else teleport)
     expected = 0.0
     for (s1, s2), checks, q in zip(
         counts, check_regions, acceptance, strict=True

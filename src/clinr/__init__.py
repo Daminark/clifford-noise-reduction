@@ -1,7 +1,8 @@
 """Clifford Noise Reduction (CliNR) in Stim.
 
 An implementation of the scheme of [1]_ in eight modules: ``protocol``
-builds the CliNR circuits and the direct baseline, ``checks`` draws the
+builds the CliNR circuits, those of its variant CZNR for circuits of ``CZ``
+gates, and the direct baseline, ``checks`` draws the
 stabilizer checks they measure, ``accounting`` counts the operations of the
 built circuits, ``bounds`` turns those counts into analytic bounds on the
 logical error rate and the gate overhead, ``estimators`` measures the same

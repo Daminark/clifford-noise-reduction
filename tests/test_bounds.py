@@ -397,6 +397,22 @@ def test_no_checks_never_bound_below_the_direct_implementation(
     assert bounds.plog_bound(circuit, n, t, 0, noise) > g(p, s1 + s2)
 
 
+def test_choose_tr_recommends_a_pair_whose_bound_beats_the_direct_one():
+    # 200 gates on 3 qubits at 1e-4: every check's cost is small against
+    # the circuit, so some pair's bound falls below the direct one.
+    circuit = seeded_circuit(3, 200, seed=4)
+    noise = noise_models.asymmetric_noise(1e-4)
+
+    choice = bounds.choose_tr(circuit, 3, noise, max_overhead=4.0, r_max=6)
+
+    assert choice is not None
+    t, r = choice
+    assert bounds.plog_bound(circuit, 3, t, r, noise) < (
+        bounds.direct_plog_bound(circuit, noise)
+    )
+    assert bounds.overhead_bound(circuit, 3, t, r, noise) <= 4.0
+
+
 def test_choose_tr_recommends_the_direct_implementation_when_it_is_best():
     # One gate is cheaper to run directly than any CliNR implementation.
     assert (
