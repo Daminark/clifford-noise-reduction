@@ -22,25 +22,30 @@ def seeded_circuit(n: int, size: int, seed: int) -> stim.Circuit:
     return circuits.random_gate_sequence(n, size, np.random.default_rng(seed))
 
 
-def fault_locations(built: stim.Circuit) -> accounting.Region:
-    """Count the noisy operations in ``built``, by kind, from its channels."""
-    n1 = n2 = nm = n_prep = 0
+def fault_locations(built: stim.Circuit) -> dict[str, accounting.Region]:
+    """Count the noisy operations in ``built`` by kind, for each tag."""
+    counts: dict[str, list[int]] = {}
     for inst in built.flattened():  # type: ignore[attr-defined]  # stubs omit iteration
         targets = len(inst.targets_copy())
         args = inst.gate_args_copy()
+        kinds = counts.setdefault(inst.tag, [0, 0, 0, 0])
         if inst.name == "DEPOLARIZE1":
             assert args == [NOISE.p1]
-            n1 += targets
+            kinds[0] += targets
         elif inst.name == "DEPOLARIZE2":
             assert args == [NOISE.p2]
-            n2 += targets // 2
-        elif inst.name in ("X_ERROR", "Z_ERROR"):
-            assert args == [NOISE.p_prep]
-            n_prep += targets
+            kinds[1] += targets // 2
         elif inst.name == "M" and args:  # a noiseless check measures bare
             assert args == [NOISE.p_m]
-            nm += targets
-    return accounting.Region(n1=n1, n2=n2, nm=nm, n_prep=n_prep)
+            kinds[2] += targets
+        elif inst.name in ("X_ERROR", "Z_ERROR"):
+            assert args == [NOISE.p_prep]
+            kinds[3] += targets
+    return {
+        tag: accounting.Region(*kinds)
+        for tag, kinds in counts.items()
+        if any(kinds)
+    }
 
 
 def protocol_operations(built: stim.Circuit, n: int) -> int:
@@ -124,16 +129,25 @@ def test_regions_count_every_fault_location_the_builder_emits(
         for chunk in protocol.chunk_circuit(circuit, n, t)
     ]
 
-    # Noiseless checks are operations without fault locations.
-    regions = []
-    for (s1, s2), chunk_checks in zip(
-        counts, check_regions(drawn, native_plus), strict=True
+    # Each region carries its own tag, and noiseless checks are operations
+    # without fault locations.
+    expected = {}
+    for k, ((s1, s2), chunk_checks) in enumerate(
+        zip(counts, drawn, strict=True)
     ):
-        faulty = chunk_checks if noisy_checks else accounting.ZERO
-        regions.append(accounting.protected_region(prep, s1, s2, faulty))
-        regions.append(accounting.teleport_region(n))
+        expected[f"prep/{k}"] = prep
+        expected[f"gates/{k}"] = accounting.Region(
+            n1=s1, n2=s2, nm=0, n_prep=0
+        )
+        if noisy_checks:
+            for j, check in enumerate(chunk_checks):
+                expected[f"check/{k}/{j}"] = accounting.check_region(
+                    1, check.weight, native_plus
+                )
+        expected[f"teleport/{k}"] = accounting.teleport_region(n)
+    expected = {tag: region for tag, region in expected.items() if any(region)}
 
-    assert fault_locations(built) == accounting.add(*regions)
+    assert fault_locations(built) == expected
 
 
 @given(

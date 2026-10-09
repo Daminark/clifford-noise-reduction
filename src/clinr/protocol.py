@@ -85,26 +85,30 @@ def _is_two_qubit(name: str) -> bool:
 # non-zero.
 # ---------------------------------------------------------------------------
 def _prep_noisy(
-    circ: stim.Circuit, targets: list[int], noise: NoiseModel
+    circ: stim.Circuit, targets: list[int], noise: NoiseModel, tag: str
 ) -> None:
     """Append ``R`` on ``targets`` followed by an ``X_ERROR`` at ``p_prep``."""
     circ.append("R", targets)
     if noise.p_prep > 0:
-        circ.append("X_ERROR", targets, noise.p_prep)
+        circ.append("X_ERROR", targets, noise.p_prep, tag=tag)
 
 
 def _measure_noisy(
-    circ: stim.Circuit, targets: list[int], noise: NoiseModel
+    circ: stim.Circuit, targets: list[int], noise: NoiseModel, tag: str
 ) -> None:
     """Append ``M`` on ``targets``, each outcome flipped at ``p_m``."""
     if noise.p_m > 0:
-        circ.append("M", targets, noise.p_m)
+        circ.append("M", targets, noise.p_m, tag=tag)
     else:
         circ.append("M", targets)
 
 
 def _apply_noisy(
-    circ: stim.Circuit, gate: str, targets: list[int], noise: NoiseModel
+    circ: stim.Circuit,
+    gate: str,
+    targets: list[int],
+    noise: NoiseModel,
+    tag: str,
 ) -> None:
     """Append ``gate`` on ``targets``, then its depolarizing noise.
 
@@ -115,13 +119,15 @@ def _apply_noisy(
     two = _is_two_qubit(gate)
     rate = noise.p2 if two else noise.p1
     if rate > 0:
-        circ.append("DEPOLARIZE2" if two else "DEPOLARIZE1", targets, rate)
+        name = "DEPOLARIZE2" if two else "DEPOLARIZE1"
+        circ.append(name, targets, rate, tag=tag)
 
 
 def _prep_plus_noisy(
     circ: stim.Circuit,
     targets: list[int],
     noise: NoiseModel,
+    tag: str,
     *,
     native_plus: bool,
 ) -> None:
@@ -129,10 +135,10 @@ def _prep_plus_noisy(
     if native_plus:
         circ.append("RX", targets)
         if noise.p_prep > 0:
-            circ.append("Z_ERROR", targets, noise.p_prep)
+            circ.append("Z_ERROR", targets, noise.p_prep, tag=tag)
     else:
-        _prep_noisy(circ, targets, noise)
-        _apply_noisy(circ, "H", targets, noise)
+        _prep_noisy(circ, targets, noise, tag)
+        _apply_noisy(circ, "H", targets, noise, tag)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +327,7 @@ def _measure_stabilizer_noisy(
     pauli: stim.PauliString,
     anc: int,
     noise: NoiseModel,
+    tag: str,
     *,
     native_plus: bool = False,
 ) -> None:
@@ -333,14 +340,14 @@ def _measure_stabilizer_noisy(
     """
     assert pauli[anc] == 0, f"ancilla {anc} in the support of {pauli}"
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
-    _prep_plus_noisy(circ, [anc], noise, native_plus=native_plus)
+    _prep_plus_noisy(circ, [anc], noise, tag, native_plus=native_plus)
     for qubit in range(len(pauli)):
         code = pauli[qubit]
         if code == 0:
             continue
-        _apply_noisy(circ, controlled[code], [anc, qubit], noise)
-    _apply_noisy(circ, "H", [anc], noise)
-    _measure_noisy(circ, [anc], noise)
+        _apply_noisy(circ, controlled[code], [anc, qubit], noise, tag)
+    _apply_noisy(circ, "H", [anc], noise, tag)
+    _measure_noisy(circ, [anc], noise, tag)
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +444,8 @@ def build_direct(
     -------
     stim.Circuit
         On ``4n + 1`` qubits, with no detectors and ``2n`` observables, the
-        Choi stabilizers of ``C``; exact at zero noise.
+        Choi stabilizers of ``C``; exact at zero noise. Every noise channel
+        is tagged ``gates/0``.
 
     Raises
     ------
@@ -457,7 +465,9 @@ def build_direct(
         out.append("CX", [ref[i], b1[i]])
 
     for name, targets in gate_list(circuit):
-        _apply_noisy(out, name, [b1[qubit] for qubit in targets], noise)
+        _apply_noisy(
+            out, name, [b1[qubit] for qubit in targets], noise, "gates/0"
+        )
 
     for observable, gen in enumerate(
         stabilizer_gens(full_tableau, ref, b1, total)
@@ -513,7 +523,11 @@ def build_clinr_tr(
     stim.Circuit
         On ``4n + 1`` qubits, with one detector per check in chunk order and
         ``2n`` observables, the Choi stabilizers of ``C``; exact at zero
-        noise.
+        noise. Every noise channel is tagged with the region it belongs to
+        in chunk ``k``, counted from 0, as :mod:`clinr.accounting` divides
+        it: ``prep/k`` for the preparation of the resource, ``gates/k`` for
+        the chunk's gates, ``check/k/j`` for its ``j``-th check, and
+        ``teleport/k`` for the teleportation.
 
     Raises
     ------
@@ -559,34 +573,40 @@ def build_clinr_tr(
                 )
 
         # Protected region: prepare this chunk's resource (I x C_k)|Phi+>.
+        prep, gates, teleport = f"prep/{k}", f"gates/{k}", f"teleport/{k}"
         for i in range(n):
-            _prep_plus_noisy(out, [b2[i]], noise, native_plus=native_plus)
-            _prep_noisy(out, [b3[i]], noise)
-            _apply_noisy(out, "CX", [b2[i], b3[i]], noise)
+            _prep_plus_noisy(
+                out, [b2[i]], noise, prep, native_plus=native_plus
+            )
+            _prep_noisy(out, [b3[i]], noise, prep)
+            _apply_noisy(out, "CX", [b2[i], b3[i]], noise, prep)
         for name, targets in gate_list(chunk):
-            _apply_noisy(out, name, [b3[qubit] for qubit in targets], noise)
+            _apply_noisy(
+                out, name, [b3[qubit] for qubit in targets], noise, gates
+            )
 
         # Offline checks on this chunk's resource.
-        for logical in chunk_checks:
+        for j, logical in enumerate(chunk_checks):
             check = _embed(logical, b2, b3, total)
             _measure_stabilizer_noisy(
                 out,
                 check,
                 anc,
                 noise if noisy_checks else _NOISELESS,
+                f"check/{k}/{j}",
                 native_plus=native_plus,
             )
             out.append("DETECTOR", [stim.target_rec(-1)])
 
         # Teleport the data through this chunk: Bell-measure data_in vs b2.
         for i in range(n):
-            _apply_noisy(out, "CX", [data_in[i], b2[i]], noise)
+            _apply_noisy(out, "CX", [data_in[i], b2[i]], noise, teleport)
         for i in range(n):
-            _apply_noisy(out, "H", [data_in[i]], noise)
+            _apply_noisy(out, "H", [data_in[i]], noise, teleport)
         frame = {index: tableau(pauli) for index, pauli in frame.items()}
         base = out.num_measurements
-        _measure_noisy(out, data_in, noise)  # m0_i at index base + i
-        _measure_noisy(out, b2, noise)  # m1_i at index base + n + i
+        _measure_noisy(out, data_in, noise, teleport)  # m0_i at base + i
+        _measure_noisy(out, b2, noise, teleport)  # m1_i at base + n + i
         for i in range(n):
             frame[base + n + i] = tableau.x_output(i)
             frame[base + i] = tableau.z_output(i)

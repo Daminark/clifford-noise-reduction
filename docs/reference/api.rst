@@ -37,6 +37,12 @@ clinr.estimators
 .. automodule:: clinr.estimators
    :members:
 
+clinr.first_order
+-----------------
+
+.. automodule:: clinr.first_order
+   :members:
+
 clinr.circuits
 --------------
 

@@ -215,8 +215,8 @@ tags: [remove-input]
 excerpt(protocol.build_clinr_tr, """\
         frame = {index: tableau(pauli) for index, pauli in frame.items()}
         base = out.num_measurements
-        _measure_noisy(out, data_in, noise)  # m0_i at index base + i
-        _measure_noisy(out, b2, noise)  # m1_i at index base + n + i
+        _measure_noisy(out, data_in, noise, teleport)  # m0_i at base + i
+        _measure_noisy(out, b2, noise, teleport)  # m1_i at base + n + i
         for i in range(n):
             frame[base + n + i] = tableau.x_output(i)
             frame[base + i] = tableau.z_output(i)
