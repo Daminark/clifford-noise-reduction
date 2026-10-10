@@ -33,6 +33,7 @@ explanation/estimation
 explanation/families
 explanation/regret
 explanation/sharpness
+explanation/payoff
 explanation/differences
 explanation/related-work
 explanation/decisions
