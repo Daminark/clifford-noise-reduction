@@ -19,6 +19,7 @@ how-to/own-circuit
 how-to/own-checks
 how-to/repeated-draws
 how-to/random-cliffords
+how-to/reproduce-results
 ```
 
 ```{toctree}
