@@ -5,8 +5,11 @@ The circuits are complete graphs: one ``CZ`` on every pair of ``n`` qubits,
 App. E). Under three noise regimes, the script estimates the logical error
 rate of the direct implementation and of three schemes at a budget of 2 and
 of 4 on the gate overhead: CZNR, with checks drawn uniformly from the graph
-state's group, and CliNR, with uniform and with restricted checks. Under
-each regime the sizes run in steps, coarser beyond a set size, until the
+state's group, and CliNR, with uniform and with restricted checks. CZNR
+runs twice, with ``|+>`` prepared as a reset and a Hadamard, as everywhere
+else in the package, and with one native preparation, as the paper counts
+it, since at the paper's rates the budget of 2 falls between the two.
+Under each regime the sizes run in steps, coarser beyond a set size, until the
 direct implementation's bound, which is nearly exact, reaches a set logical
 error rate.
 
@@ -51,11 +54,13 @@ from clinr import bounds, estimators
 from clinr.noise_models import NoiseModel
 
 #: The schemes compared with the direct implementation: whether each is
-#: CZNR, and whether its checks are restricted.
-ARMS: dict[str, tuple[bool, bool]] = {
-    "cznr": (True, False),
-    "uniform": (False, False),
-    "restricted": (False, True),
+#: CZNR, whether its checks are restricted, and whether it prepares ``|+>``
+#: natively.
+ARMS: dict[str, tuple[bool, bool, bool]] = {
+    "cznr": (True, False, False),
+    "cznr-native": (True, False, True),
+    "uniform": (False, False, False),
+    "restricted": (False, True, False),
 }
 
 # Phases of the run, which separate its random streams.
@@ -102,7 +107,7 @@ FULL = Config(
     budgets=(2.0, 4.0),
     arms=tuple(ARMS),
     t_max=12,
-    pilot_draws=3,
+    pilot_draws=10,
     pilot_shots=1_000,
     draws=10,
     shots=10_000,
@@ -151,13 +156,23 @@ def run_point(
     """Estimate one pair ``(t, r)`` of an arm over ``draws`` draws."""
     circuit = stim.Circuit(text)
     rng = np.random.default_rng(seed)
-    cznr, restricted = ARMS[arm]
+    cznr, restricted, native_plus = ARMS[arm]
     model = NoiseModel(**noise)
     estimates = [
-        estimators.estimate_cznr(circuit, n, t, r, model, shots, rng)
+        estimators.estimate_cznr(
+            circuit, n, t, r, model, shots, rng, native_plus=native_plus
+        )
         if cznr
         else estimators.estimate_clinr(
-            circuit, n, t, r, model, shots, rng, restricted_checks=restricted
+            circuit,
+            n,
+            t,
+            r,
+            model,
+            shots,
+            rng,
+            restricted_checks=restricted,
+            native_plus=native_plus,
         )
         for _ in range(draws)
     ]
@@ -180,7 +195,7 @@ def estimates_of(
     record: dict[str, Any], n: int, arm: str
 ) -> list[estimators.Estimate]:
     """Rebuild the estimates of one point of an arm from its record."""
-    cznr, restricted = ARMS[arm]
+    cznr, restricted, native_plus = ARMS[arm]
     return [
         estimators.Estimate(
             record["shots"],
@@ -194,6 +209,7 @@ def estimates_of(
             tuple(chunk_weight),
             tuple(tuple(pair) for pair in record["chunk_counts"]),
             restricted_checks=restricted,
+            native_plus=native_plus,
             cznr=cznr,
         )
         for accepted, errors, chunk_accepted, chunk_weight in zip(
