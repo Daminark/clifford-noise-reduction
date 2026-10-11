@@ -337,7 +337,7 @@ def run(config: Config, path: Path, workers: int) -> None:
         noise = dataclasses.asdict(model)
         for n in data["sizes"][regime]:
             text = data["circuits"][str(n)]
-            case = regret._key(regime, n)
+            case = regret.record_key(regime, n)
             if case not in data["direct"]:
                 seed = np.random.SeedSequence(
                     config.seed, spawn_key=(DIRECT, i, n)
@@ -351,7 +351,7 @@ def run(config: Config, path: Path, workers: int) -> None:
                     )
                 )
             for j, arm in enumerate(config.arms):
-                key = regret._key(case, arm)
+                key = regret.record_key(case, arm)
                 if key in data["units"]:
                     continue
                 jobs.append(
@@ -387,13 +387,22 @@ def run(config: Config, path: Path, workers: int) -> None:
                 pool.submit(function, *arguments): (table, key)
                 for table, key, function, arguments in jobs
             }
-            for future in as_completed(futures):
-                yield (*futures[future], future.result())
+            try:
+                for future in as_completed(futures):
+                    yield (*futures[future], future.result())
+            finally:
+                # On a failure, drop the queued jobs rather than run them
+                # only to discard their results.
+                for future in futures:
+                    future.cancel()
 
-        for done, (table, key, result) in enumerate(finished(), 1):
-            data[table][key] = result
-            state.save(unless_recent=True)
-            print(f"{done}/{len(jobs)} {table} {key}", flush=True)
+        try:
+            for done, (table, key, result) in enumerate(finished(), 1):
+                data[table][key] = result
+                state.save(unless_recent=True)
+                print(f"{done}/{len(jobs)} {table} {key}", flush=True)
+        finally:
+            state.save()  # keep what finished before any failure
 
     data["runs"][-1]["finished"] = datetime.datetime.now(
         datetime.UTC
@@ -422,7 +431,7 @@ def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for key, unit in data["units"].items():
         regime, size, arm = key.split("/")
-        direct = data["direct"][regret._key(regime, size)]
+        direct = data["direct"][regret.record_key(regime, size)]
         n = int(size)
         for budget, t in unit["choice"].items():
             rate = overhead = math.nan

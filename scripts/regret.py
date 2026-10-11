@@ -114,7 +114,7 @@ QUICK = Config(
 GRID, REESTIMATE, DIRECT_FIRST, DIRECT_AGAIN = 0, 1, 2, 3
 
 
-def _key(*parts: object) -> str:
+def record_key(*parts: object) -> str:
     """Return the key of a record in the results file."""
     return "/".join(str(part) for part in parts)
 
@@ -295,10 +295,10 @@ def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
             return math.nan
         if pick == DIRECT:
             regime, _, c, _ = case.split("/")
-            record = data["direct_reestimates"][_key(regime, n, c)]
+            record = data["direct_reestimates"][record_key(regime, n, c)]
             return float(record["errors"] / record["shots"])
         assert isinstance(pick, list)
-        record = data["reestimates"][_key(case, *pick)]
+        record = data["reestimates"][record_key(case, *pick)]
         return measured(record, n, FAMILIES[family])[0]
 
     rows = []
@@ -429,7 +429,7 @@ def run(config: Config, path: Path, workers: int) -> None:
     for i, (regime, noise) in enumerate(config.regimes):
         for n in config.sizes:
             for c, text in enumerate(texts[n]):
-                key = _key(regime, n, c)
+                key = record_key(regime, n, c)
                 for table, phase in (
                     ("direct", DIRECT_FIRST),
                     ("direct_reestimates", DIRECT_AGAIN),
@@ -448,13 +448,13 @@ def run(config: Config, path: Path, workers: int) -> None:
 
     # The bounds at every grid pair, and the bound's choice per ceiling.
     for _, regime, n, c, family, _ in cases(config):
-        key = _key(regime, n, c, family)
+        key = record_key(regime, n, c, family)
         if key in data["bounds"]:
             continue
         circuit, noise = stim.Circuit(texts[n][c]), regimes[regime]
         restricted = FAMILIES[family]
         grid = {
-            _key(t, r): [
+            record_key(t, r): [
                 bounds.plog_bound(
                     circuit, n, t, r, noise, restricted_checks=restricted
                 ),
@@ -509,13 +509,22 @@ def run(config: Config, path: Path, workers: int) -> None:
                 pool.submit(run_point, *arguments(args)): (table, key)
                 for table, key, args in jobs
             }
-            for future in as_completed(futures):
-                yield (*futures[future], future.result())
+            try:
+                for future in as_completed(futures):
+                    yield (*futures[future], future.result())
+            finally:
+                # On a failure, drop the queued jobs rather than run them
+                # only to discard their results.
+                for future in futures:
+                    future.cancel()
 
-        for done, (table, key, result) in enumerate(finished(), 1):
-            data[table][key] = result
-            state.save(unless_recent=True)
-            print(f"{table} {done}/{len(jobs)}: {key}", flush=True)
+        try:
+            for done, (table, key, result) in enumerate(finished(), 1):
+                data[table][key] = result
+                state.save(unless_recent=True)
+                print(f"{table} {done}/{len(jobs)}: {key}", flush=True)
+        finally:
+            state.save()  # keep what finished before any failure
 
     with contextlib.ExitStack() as stack:
         pool = (
@@ -528,7 +537,7 @@ def run(config: Config, path: Path, workers: int) -> None:
         for i, regime, n, c, family, j in cases(config):
             for t in config.ts:
                 for r in config.rs:
-                    key = _key(regime, n, c, family, t, r)
+                    key = record_key(regime, n, c, family, t, r)
                     if key not in data["grid"]:
                         seed = _seed(config, GRID, i, n, c, j, t, r)
                         args = {
@@ -548,13 +557,13 @@ def run(config: Config, path: Path, workers: int) -> None:
         jobs = []
         for i, regime, n, c, family, j in cases(config):
             restricted = FAMILIES[family]
-            case = _key(regime, n, c, family)
-            record = data["direct"][_key(regime, n, c)]
+            case = record_key(regime, n, c, family)
+            record = data["direct"][record_key(regime, n, c)]
             direct_rate = record["errors"] / record["shots"]
             points = {}
             for t in config.ts:
                 for r in config.rs:
-                    record = data["grid"][_key(case, t, r)]
+                    record = data["grid"][record_key(case, t, r)]
                     points[t, r] = measured(record, n, restricted)
             rule_r = rule_rs[n, c]
             grid_bounds = data["bounds"][case]["grid"]
@@ -584,14 +593,14 @@ def run(config: Config, path: Path, workers: int) -> None:
                     (
                         [t, rule_r]
                         for t in config.ts
-                        if grid_bounds[_key(t, rule_r)][1] <= ceiling
+                        if grid_bounds[record_key(t, rule_r)][1] <= ceiling
                     ),
                     None,
                 )
                 picked = data["bounds"][case]["choice"][str(ceiling)]
                 # Pairs are [t, r], "direct" is the direct implementation,
                 # and None a rule that no t in the grid satisfies.
-                data["choices"][_key(case, ceiling)] = {
+                data["choices"][record_key(case, ceiling)] = {
                     "bound": picked,
                     "rule": rule,
                     "rule_by_bound": rule_by_bound,
@@ -601,7 +610,7 @@ def run(config: Config, path: Path, workers: int) -> None:
                     if isinstance(pick, list):
                         again.add((pick[0], pick[1]))
             for t, r in sorted(again):
-                key = _key(case, t, r)
+                key = record_key(case, t, r)
                 if key not in data["reestimates"]:
                     seed = _seed(config, REESTIMATE, i, n, c, j, t, r)
                     args = {

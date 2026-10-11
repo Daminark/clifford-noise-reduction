@@ -85,14 +85,14 @@ direct_slack = []
 pair_slack = {family: [] for family in families}
 outside = []
 for row in rows:
-    case = regret._key(row["regime"], row["n"], row["circuit"], row["family"])
+    case = regret.record_key(row["regime"], row["n"], row["circuit"], row["family"])
     noise = rates[row["regime"]]
     text = data["circuits"][str(row["n"])][row["circuit"]]
     direct_bound = bounds.direct_plog_bound(stim.Circuit(text), NoiseModel(**noise))
     direct_slack.append(direct_bound / row["direct"])
     pick = row["best_pick"]
     if isinstance(pick, list):
-        plog, overhead = data["bounds"][case]["grid"][regret._key(*pick)]
+        plog, overhead = data["bounds"][case]["grid"][regret.record_key(*pick)]
         pair_slack[row["family"]].append(plog / row["best"])
         outside.append(overhead > row["ceiling"])
 glue("direct_slack", max(abs(value - 1) for value in direct_slack), display=False)

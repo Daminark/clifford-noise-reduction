@@ -325,8 +325,8 @@ def cases(
 def circuit_key(part: int, n: int, alpha: float, c: int) -> str:
     """Return the key of a circuit, shared by every regime."""
     if part == 0:
-        return regret._key("clifford", n, c)
-    return regret._key("sequence", n, alpha, c)
+        return regret.record_key("clifford", n, c)
+    return regret.record_key("sequence", n, alpha, c)
 
 
 def run(config: Config, path: Path, workers: int) -> None:
@@ -401,7 +401,7 @@ def run(config: Config, path: Path, workers: int) -> None:
         budgets = config.curve_budgets if part == 0 else config.map_budgets
         for c in range(count):
             text = data["circuits"][circuit_key(part, n, alpha, c)]
-            case = regret._key(
+            case = regret.record_key(
                 "curves" if part == 0 else "maps", regime, n, alpha, c
             )
             if case not in data["direct"]:
@@ -417,7 +417,7 @@ def run(config: Config, path: Path, workers: int) -> None:
                     )
                 )
             for family, restricted in regret.FAMILIES.items():
-                key = regret._key(case, family)
+                key = regret.record_key(case, family)
                 if key in data["units"]:
                     continue
                 spawn_key = (part, i, n, a, c, family_index[family])
@@ -454,13 +454,22 @@ def run(config: Config, path: Path, workers: int) -> None:
                 pool.submit(function, *arguments): (table, key)
                 for table, key, function, arguments in jobs
             }
-            for future in as_completed(futures):
-                yield (*futures[future], future.result())
+            try:
+                for future in as_completed(futures):
+                    yield (*futures[future], future.result())
+            finally:
+                # On a failure, drop the queued jobs rather than run them
+                # only to discard their results.
+                for future in futures:
+                    future.cancel()
 
-        for done, (table, key, result) in enumerate(finished(), 1):
-            data[table][key] = result
-            state.save(unless_recent=True)
-            print(f"{done}/{len(jobs)} {table} {key}", flush=True)
+        try:
+            for done, (table, key, result) in enumerate(finished(), 1):
+                data[table][key] = result
+                state.save(unless_recent=True)
+                print(f"{done}/{len(jobs)} {table} {key}", flush=True)
+        finally:
+            state.save()  # keep what finished before any failure
 
     data["runs"][-1]["finished"] = datetime.datetime.now(
         datetime.UTC
@@ -491,7 +500,7 @@ def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for key, unit in data["units"].items():
         part, regime, size, alpha, c, family = key.split("/")
-        case = regret._key(part, regime, size, alpha, c)
+        case = regret.record_key(part, regime, size, alpha, c)
         direct = data["direct"][case]
         n = int(size)
         restricted = regret.FAMILIES[family]

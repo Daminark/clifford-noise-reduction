@@ -3,9 +3,11 @@
 import importlib.util
 import json
 import math
+import shutil
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -26,10 +28,26 @@ def _load(name: str) -> ModuleType:
     return module
 
 
-def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
+@pytest.fixture(scope="module")
+def regret_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Return a finished quick regret run, shared by the tests that read it."""
+    path: Path = tmp_path_factory.mktemp("regret") / "regret.json"
+    _load("regret").main(["--quick", "--output", str(path), "--workers", "1"])
+    return path
+
+
+def copy_of(source: Path, tmp_path: Path) -> Path:
+    """Return a copy of ``source`` in ``tmp_path``, for a test to change."""
+    path = tmp_path / source.name
+    shutil.copy(source, path)
+    return path
+
+
+def test_regret_quick_run_records_every_point_and_resumes(
+    regret_run, tmp_path
+):
     regret = _load("regret")
-    path = tmp_path / "regret.json"
-    regret.main(["--quick", "--output", str(path), "--workers", "1"])
+    path = copy_of(regret_run, tmp_path)
     data = json.loads(path.read_text(encoding="utf-8"))
     config = regret.QUICK
     cases = list(regret.cases(config))
@@ -46,7 +64,7 @@ def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
         for pick in [*picks, choice["rule"], choice["rule_by_bound"]]:
             if isinstance(pick, list):
                 t, r = pick
-                assert regret._key(case, t, r) in data["reestimates"]
+                assert regret.record_key(case, t, r) in data["reestimates"]
             else:
                 assert pick in (regret.DIRECT, None)
         assert None not in picks
@@ -60,17 +78,15 @@ def test_regret_quick_run_records_every_point_and_resumes(tmp_path):
     assert len(again["runs"]) == 2
 
 
-def test_regret_outcomes_read_every_choice_from_fresh_estimates(tmp_path):
+def test_regret_outcomes_read_every_choice_from_fresh_estimates(regret_run):
     regret = _load("regret")
-    path = tmp_path / "regret.json"
-    regret.main(["--quick", "--output", str(path), "--workers", "1"])
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(regret_run.read_text(encoding="utf-8"))
 
     rows = regret.outcomes(data)
 
     assert len(rows) == len(data["choices"])
     for row in rows:
-        key = regret._key(row["regime"], row["n"], row["circuit"])
+        key = regret.record_key(row["regime"], row["n"], row["circuit"])
         again = data["direct_reestimates"][key]
         assert row["direct"] == again["errors"] / again["shots"]
         for name in ("best", "best_pair", "bound", "rule", "rule_by_bound"):
@@ -90,10 +106,9 @@ def test_paper_r_is_the_floor_of_log2_of_size_over_n(size, n, r):
     assert _load("regret").paper_r(size, n) == r
 
 
-def test_regret_refuses_a_file_made_with_other_settings(tmp_path):
+def test_regret_refuses_a_file_made_with_other_settings(regret_run, tmp_path):
     regret = _load("regret")
-    path = tmp_path / "regret.json"
-    regret.main(["--quick", "--output", str(path), "--workers", "1"])
+    path = copy_of(regret_run, tmp_path)
     data = json.loads(path.read_text(encoding="utf-8"))
     data["config"]["draws"] += 1
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -101,12 +116,13 @@ def test_regret_refuses_a_file_made_with_other_settings(tmp_path):
         regret.main(["--quick", "--output", str(path), "--workers", "1"])
 
 
-def test_sharpness_quick_run_records_every_point_and_resumes(tmp_path):
+def test_sharpness_quick_run_records_every_point_and_resumes(
+    regret_run, tmp_path
+):
     regret = _load("regret")
     sharpness = _load("sharpness")
-    source = tmp_path / "regret.json"
+    source = regret_run
     path = tmp_path / "sharpness.json"
-    regret.main(["--quick", "--output", str(source), "--workers", "1"])
     arguments = ["--quick", "--regret", str(source), "--output", str(path)]
     sharpness.main(arguments)
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -114,7 +130,7 @@ def test_sharpness_quick_run_records_every_point_and_resumes(tmp_path):
     config = sharpness.QUICK
 
     chosen = {
-        regret._key(
+        regret.record_key(
             row["regime"],
             row["n"],
             row["circuit"],
@@ -151,12 +167,12 @@ def test_sharpness_quick_run_records_every_point_and_resumes(tmp_path):
     assert len(again["runs"]) == 2
 
 
-def test_sharpness_refuses_a_file_made_from_other_results(tmp_path):
-    regret = _load("regret")
+def test_sharpness_refuses_a_file_made_from_other_results(
+    regret_run, tmp_path
+):
     sharpness = _load("sharpness")
-    source = tmp_path / "regret.json"
+    source = copy_of(regret_run, tmp_path)
     path = tmp_path / "sharpness.json"
-    regret.main(["--quick", "--output", str(source), "--workers", "1"])
     arguments = ["--quick", "--regret", str(source), "--output", str(path)]
     sharpness.main(arguments)
     source.write_text(
@@ -165,6 +181,60 @@ def test_sharpness_refuses_a_file_made_from_other_results(tmp_path):
 
     with pytest.raises(SystemExit, match="other regret results"):
         sharpness.main(arguments)
+
+
+def test_sharpness_refuses_an_unfinished_regret_run(regret_run, tmp_path):
+    sharpness = _load("sharpness")
+    source = copy_of(regret_run, tmp_path)
+    data = json.loads(source.read_text(encoding="utf-8"))
+    del data["runs"][-1]["finished"]
+    source.write_text(json.dumps(data), encoding="utf-8")
+    path = tmp_path / "sharpness.json"
+
+    with pytest.raises(SystemExit, match="unfinished regret run"):
+        sharpness.main(
+            ["--quick", "--regret", str(source), "--output", str(path)]
+        )
+    assert not path.exists()
+
+
+def test_regret_keeps_the_points_finished_before_a_failure(
+    tmp_path, monkeypatch
+):
+    """A failing point stops the run, but the earlier points are saved."""
+    regret = _load("regret")
+    run_point = regret.run_point
+    calls = []
+
+    def fail_on_the_third(*arguments):
+        calls.append(arguments)
+        if len(calls) == 3:
+            raise RuntimeError("a failing point")
+        return run_point(*arguments)
+
+    monkeypatch.setattr(regret, "run_point", fail_on_the_third)
+    path = tmp_path / "regret.json"
+
+    with pytest.raises(RuntimeError, match="a failing point"):
+        regret.main(["--quick", "--output", str(path), "--workers", "1"])
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert len(data["grid"]) == 2
+    assert "finished" not in data["runs"][-1]
+
+
+def assert_smallest_t_within_each_budget(unit: dict[str, Any]) -> None:
+    """Assert each chosen t is estimated afresh and the smallest that fits."""
+    for budget, t in unit["choice"].items():
+        fitting = [
+            int(pilot_t)
+            for pilot_t, (_, overhead) in unit["pilots"].items()
+            if overhead <= float(budget)
+        ]
+        if t is None:
+            assert not fitting
+        else:
+            assert str(t) in unit["estimates"]
+            assert t == min(fitting)
 
 
 def test_payoff_quick_run_records_every_unit_and_resumes(tmp_path):
@@ -181,11 +251,7 @@ def test_payoff_quick_run_records_every_unit_and_resumes(tmp_path):
     assert len(data["units"]) == circuits * 2
     for unit in data["units"].values():
         assert unit["r"] >= 1
-        for t in unit["choice"].values():
-            if t is not None:
-                overhead = unit["pilots"][str(t)][1]
-                assert str(t) in unit["estimates"]
-                assert overhead <= max(config.curve_budgets)
+        assert_smallest_t_within_each_budget(unit)
     rows = payoff.outcomes(data)
     budgets = {
         0: len(config.curve_budgets),
@@ -227,10 +293,7 @@ def test_dense_quick_run_records_every_unit_and_resumes(tmp_path):
         n = int(key.split("/")[1])
         assert unit["s"] == n * (n - 1) // 2
         assert unit["r"] >= 1
-        for t in unit["choice"].values():
-            if t is not None:
-                assert str(t) in unit["estimates"]
-                assert unit["pilots"][str(t)][1] <= max(config.budgets)
+        assert_smallest_t_within_each_budget(unit)
     rows = dense.outcomes(data)
     assert len(rows) == cases * len(config.arms) * len(config.budgets)
     for row in rows:

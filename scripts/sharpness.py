@@ -389,6 +389,11 @@ def save(data: dict[str, Any], path: Path) -> None:
 def run(config: Config, source: Path, path: Path) -> None:
     """Run both parts, resuming from ``path`` if it exists."""
     settings = json.loads(json.dumps(dataclasses.asdict(config)))
+    results = json.loads(source.read_text(encoding="utf-8"))
+    if "finished" not in results["runs"][-1]:
+        raise SystemExit(
+            f"{source} is an unfinished regret run; finish it first"
+        )
     source_digest = digest(source)
     if path.exists():
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -422,7 +427,6 @@ def run(config: Config, source: Path, path: Path) -> None:
         }
     )
     save(data, path)
-    results = json.loads(source.read_text(encoding="utf-8"))
     regret_config = results["config"]
     regimes = {
         name: NoiseModel(**noise) for name, noise in regret_config["regimes"]
@@ -437,7 +441,7 @@ def run(config: Config, source: Path, path: Path) -> None:
     for row in regret.outcomes(results):
         pick = row["best_pair_pick"]
         if isinstance(pick, list) and pick[1] >= 1:
-            case = regret._key(
+            case = regret.record_key(
                 row["regime"], row["n"], row["circuit"], row["family"]
             )
             pairs[case].add((pick[0], pick[1]))
@@ -445,7 +449,7 @@ def run(config: Config, source: Path, path: Path) -> None:
         regime, size_key, circuit_key, family = case.split("/")
         n, c = int(size_key), int(circuit_key)
         for t, r in sorted(chosen):
-            key = regret._key(case, t, r)
+            key = regret.record_key(case, t, r)
             if key in data["waterfall"]:
                 continue
             seed = np.random.SeedSequence(
@@ -479,7 +483,7 @@ def run(config: Config, source: Path, path: Path) -> None:
         texts = results["circuits"][str(n)][: config.position_circuits]
         for c, text in enumerate(texts):
             # A gate sequence of the same size, the same for both families.
-            sequence_key = regret._key(n, c)
+            sequence_key = regret.record_key(n, c)
             if sequence_key not in data["sequences"]:
                 rng = np.random.default_rng(
                     np.random.SeedSequence(
@@ -496,7 +500,7 @@ def run(config: Config, source: Path, path: Path) -> None:
             }
             for g, generator in enumerate(GENERATORS):
                 for family, restricted in regret.FAMILIES.items():
-                    key = regret._key(n, c, generator, family)
+                    key = regret.record_key(n, c, generator, family)
                     if key in data["positions"]:
                         continue
                     seed = np.random.SeedSequence(
