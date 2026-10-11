@@ -8,12 +8,20 @@ version = "0.1.0"
 description = "Clifford Noise Reduction (CliNR) in Stim"
 authors = [{ name = "Amin Idelhaj" }]
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "numpy>=2.5.1",
     "scipy>=1.18.1",
     "stim>=1.16.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Daminark/clifford-noise-reduction"
+Documentation = "https://daminark.github.io/clifford-noise-reduction"
+Changelog = "https://github.com/Daminark/clifford-noise-reduction/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Daminark/clifford-noise-reduction/issues"
 
 [dependency-groups]
 dev = [
