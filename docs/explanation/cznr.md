@@ -69,7 +69,7 @@ The teleportation is charged $2n$, the paper's $3n$ without the correction.
 
 ## CZNR against CliNR on the same circuit
 
-At the same $t$ and $r$, CZNR runs fewer operations of every kind in every region than CliNR: a preparation of $2n$ operations against $4n$, the same gates, checks of weight at most $n$ against $2n$ with the same miss of $1/2$, and a teleportation of $2n$ against $4n$.
+At the same $t$ and $r$, CZNR runs, in every region, no more operations of any kind than CliNR and fewer overall: a preparation of $2n$ operations against $4n$, the same gates, checks of weight at most $n$ against $2n$ with the same miss of $1/2$, and a teleportation of $2n$ against $4n$.
 Each term of its bound is therefore the smaller, and so is its overhead bound; the test suite checks both over random circuits of `CZ` gates and parameters.
 
 The same holds of the logical error rate to first order in the error rates, which is the probability of a single fault that damages the output and escapes every check ({mod}`clinr.first_order`): CZNR has fewer such faults in every region, and the test suite checks its first-order rate against CliNR's on complete graphs.

@@ -27,8 +27,8 @@ This package makes the same choice for its cost model ({doc}`../adr/0001-run-eve
 Brown and coauthors, from qBraid, IonQ and NVIDIA ([arXiv:2605.06792](https://arxiv.org/abs/2605.06792)), apply CliNR to an encoded Trotter step of a fermionic Hamiltonian on a barium trapped-ion system, with the checks read out by mid-circuit measurement, and report a logical error rate up to 54% lower than direct execution.
 They also show, in simulation, that a machine-learning model can pick pairs of stabilizers that outperform random pairs.
 
-On their hardware, deferring a check's readout to the end of the circuit removed most of the benefit.
-Their calibrated simulation, whose noise is Pauli and whose idle errors on the ancillas commute with the measurement, showed no such difference, and they attribute the hardware effect to noise their model leaves out, such as crosstalk or other non-Pauli effects.
+On their hardware, deferring a check's readout to the end of the circuit removes most of the benefit.
+Their calibrated simulation, whose noise is Pauli and whose idle errors on the ancillas commute with the measurement, shows no such difference, and they attribute the hardware effect to noise their model leaves out, such as crosstalk or other non-Pauli effects.
 In a model where waiting adds no noise that matters, when a check is read out cannot change the statistics, which is what lets post-selection stand in for restarts here ({doc}`the-scheme`).
 Their hardware result marks that equivalence as a property of the noise model.
 

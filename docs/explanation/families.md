@@ -188,7 +188,7 @@ plt.show()
 Under the paper's rates the answer depends on the budget.
 At an overhead of 4, uniform checks win at every size and on every circuit: at $n = 25$ the best uniform pair reaches {glue:text}`uniform_paper_4_25:.3f` and the best restricted one {glue:text}`restricted_paper_4_25:.3f`, against {glue:text}`direct_paper_4_25:.3f` for the direct implementation.
 At an overhead of 2, restricted checks win from $n = 15$ on: {glue:text}`restricted_paper_2_25:.3f` against {glue:text}`uniform_paper_2_25:.3f` at $n = 25$, lower on {glue:text}`restricted_wins_paper_2_25` of the {glue:text}`circuits_per_size` circuits.
-At $n = 8$ the two are even, uniform checks lower on {glue:text}`uniform_wins_paper_2_8` circuits and restricted ones on {glue:text}`restricted_wins_paper_2_8`, and at $n = 3$ only some circuits admit any pair within the budget, none of them better than direct.
+At $n = 8$ the two are even, uniform checks lower on {glue:text}`uniform_wins_paper_2_8` circuits and restricted ones on {glue:text}`restricted_wins_paper_2_8`, and at $n = 3$ only some circuits admit any pair within the budget, none of them better than the direct implementation.
 
 The Forte-like regime shows the same crossover at a different place.
 At an overhead of 4, uniform checks win at $n = 3$ and $8$ and restricted ones at $n = 15$ and $25$, on every circuit in each case; at $n = 15$, for instance, {glue:text}`restricted_forte_like_4_15:.3f` against {glue:text}`uniform_forte_like_4_15:.3f`, with the direct implementation at {glue:text}`direct_forte_like_4_15:.3f`.

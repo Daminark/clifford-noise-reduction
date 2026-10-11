@@ -164,7 +164,7 @@ plt.show()
 With uniform checks under the paper's rates and an overhead of 4, choosing by the bounds loses little: a regret of {glue:text}`bound_paper_4_uniform_8:.2f`, {glue:text}`bound_paper_4_uniform_15:.2f` and {glue:text}`bound_paper_4_uniform_25:.2f` at $n = 8$, $15$ and $25$, or {glue:text}`bound_difference_paper_4_uniform_25:.3f` in logical error rate at $n = 25$.
 This is the regime the bounds were made for, and there they do as well as the paper's rule or better: the rule loses {glue:text}`rule_paper_4_uniform_8:.2f`, {glue:text}`rule_paper_4_uniform_15:.2f` and {glue:text}`rule_paper_4_uniform_25:.2f`.
 
-With restricted checks the bounds recommend the direct implementation throughout, as {doc}`families` found, and the regret is that of not using CliNR at all.
+With restricted checks the bounds recommend the direct implementation throughout, as {doc}`families` finds, and the regret is that of not using CliNR at all.
 Under the paper's rates and an overhead of 4 it reaches {glue:text}`bound_paper_4_restricted_25:.2f` at $n = 25$, a difference of {glue:text}`bound_difference_paper_4_restricted_25:.2f` in logical error rate.
 The paper's rule, which needs no bound, loses {glue:text}`rule_paper_4_restricted_25:.2f` there.
 The same holds under the Forte-like rates at an overhead of 4, for both families, where the bounds keep the direct implementation and lose up to {glue:text}`bound_forte_like_4_restricted_15:.2f` at $n = 15$.

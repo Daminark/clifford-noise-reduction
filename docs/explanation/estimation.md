@@ -78,7 +78,7 @@ Repeated calls give independent draws.
 {func}`clinr.estimators.logical_error_rate`, {func}`clinr.estimators.gate_overhead_over_draws` and {func}`clinr.estimators.design_effect` take a list of estimates and treat the draw, not the shot, as the unit of observation.
 
 For a draw $D$ of the checks, write $a(D)$ for the probability that an attempt passes them, $p(D)$ for the logical error rate given that it passes, and $m(D)$ for the operations of an attempt; for the overhead, all three are per chunk.
-With new checks for every attempt (*fresh*) and with one set kept for every attempt (*kept*), the logical error rate and each chunk's cost $\omega_k$, of which $\omega$ is the sum over $s$, are:
+With new checks for every attempt (*fresh*) and with one set kept for every attempt (*kept*), the logical error rate and each chunk's cost $\omega_k$, whose sum divided by $s$ is $\omega$, are:
 
 | Checks | Logical error rate               | Cost of chunk $k$                        |
 | ------ | -------------------------------- | ---------------------------------------- |
@@ -109,7 +109,7 @@ For the logical error rate, with $e_j$ and $a_j$ the fractions of draw $j$'s sho
 
 $$\widehat{\mathrm{Var}}(\hat R) = \frac{1}{J (J - 1)} \sum_j \left(\frac{e_j - \hat R a_j}{\bar a}\right)^2.$$
 
-The fresh overhead is a sum over the chunks of such ratios, and its deviations sum theirs.
+The fresh overhead is a sum over the chunks of such ratios, and each draw's deviation is the sum of theirs.
 The interval on the logical error rate is clamped to $[0, 1]$, and with a single draw both bounds are `nan`.
 
 A ratio estimator is biased by $O(1/J)$, as is any estimate of a probability given acceptance, even with new checks drawn for every shot.
@@ -128,5 +128,5 @@ At $n = 3$, with 30 random gates, $t = 2$, $r = 4$ and {func}`clinr.noise_models
 The restricted family, whose checks differ more from one another, gives {glue:text}`restricted_effect:.1f` and {glue:text}`restricted_widening:.1f` times.
 The fresh and kept logical error rates still agree closely: {glue:text}`uniform_fresh:.5f` against {glue:text}`uniform_kept:.5f` with uniform checks, and {glue:text}`restricted_fresh:.5f` against {glue:text}`restricted_kept:.5f` with restricted ones.
 
-The paper's own numerics (Sec. V) reuse each set of checks for a batch of $10^3$ shots, for expedience, which the authors justify for random Clifford circuits, since those scramble faults quickly, and expect may fail for shallower structured circuits.
+The paper's own numerics (Sec. V) reuse each set of checks for a batch of $10^3$ shots, for expedience; the authors justify this for random Clifford circuits, which scramble faults quickly, and expect it may fail for shallower structured circuits.
 The design effect measures the clustering that such reuse introduces.

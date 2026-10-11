@@ -116,7 +116,7 @@ Finally, {func}`clinr.bounds.choose_tr` compares the direct implementation with 
 print(bounds.choose_tr(circuit, n, noise, max_overhead=10, r_max=10))
 ```
 
-It keeps the direct implementation, although CliNR measured well below it.
+It keeps the direct implementation, even though we measured CliNR well below it.
 The choice is made from the bounds alone, and for a circuit this small every CliNR bound within the ceiling sits above the direct implementation's, the probability that one of its gates faults.
 
 ## What we did

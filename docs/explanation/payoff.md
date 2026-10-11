@@ -448,4 +448,4 @@ The measurements alone fault with probability {glue:text}`teleport_measurement:.
 This leans on the split of state preparation and measurement error assumed in {doc}`families`, which places most of it on measurement; error moved to preparation would fall where the checks can catch it, and CliNR would do better.
 
 Thus, under the paper's rates, this implementation reproduces the shape of the paper's two figures and the scaling of its Theorem 2, with gains larger than the paper reports.
-Under the Forte-like rates, CliNR with the paper's rule pays off only for dense circuits of 10 to 15 qubits, at a budget of 4, and by a factor of at most about 1.6.
+Under the Forte-like rates, CliNR with the paper's rule pays off only for circuits of about $n^2$ gates or more on 10 to 15 qubits, at a budget of 4, and by a factor of at most about 1.6.

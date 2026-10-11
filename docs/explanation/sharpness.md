@@ -11,7 +11,7 @@ kernelspec:
 
 # How tight the bounds are
 
-{doc}`regret` found the bound on the direct implementation nearly exact, and the bound on CliNR far above the measured rate: at the pairs with checks that measurement chose, between {glue:text}`slack_low:.1f` and {glue:text}`slack_high:.1f` times.
+{doc}`regret` finds the bound on the direct implementation nearly exact, and the bound on CliNR far above the measured rate: at the pairs with checks that measurement chooses, between {glue:text}`slack_low:.1f` and {glue:text}`slack_high:.1f` times.
 We take the CliNR bound apart to see where that slack comes from.
 We first describe how each ingredient of the bound is replaced by what actually happens, then read off the slack ingredient by ingredient, look closely at the one that dominates for restricted checks, and close with the bound on the gate overhead.
 
@@ -111,7 +111,7 @@ For one chunk, the bound of {doc}`checks-and-bounds` is
 $$\frac{g_{\mathrm{resource}} \, q^r + g_{\mathrm{check}} \, e_r + g_{\mathrm{teleport}}}{1 - g_{\mathrm{protected}}},$$
 
 and {func}`clinr.bounds.plog_terms` returns these terms for each chunk.
-Each ingredient is a worst case, and we replace them in turn, at each of the {glue:text}`points` pairs measurement chose in the regret experiment:
+Each ingredient is a worst case, and we replace them in turn, at each of the {glue:text}`points` pairs that measurement chooses in the regret experiment:
 
 1. **Harmless faults.**
    Each $g$ charges every fault of its region, whether or not it damages the output.

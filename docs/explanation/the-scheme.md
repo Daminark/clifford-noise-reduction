@@ -152,7 +152,7 @@ The scheme rests on gate teleportation, so we begin with teleportation itself.
 
 Teleportation moves a qubit's state onto another qubit, using a Bell pair $|\Phi^+\rangle = (|00\rangle + |11\rangle)/\sqrt{2}$ and two measurements.
 In the circuit below, `q0` holds the input $|\psi\rangle$, and the first two gates prepare `q1` and `q2` as a Bell pair.
-A Bell measurement of `q0` and `q1`, a `CX`, an `H` and two measurements, leaves `q2` in $P|\psi\rangle$ for a Pauli $P$ that the two outcomes determine.
+A Bell measurement of `q0` and `q1`, which is a `CX`, an `H` and two measurements, leaves `q2` in $P|\psi\rangle$ for a Pauli $P$ that the two outcomes determine.
 The two classically controlled gates at the end apply $P$ again, which leaves `q2` in $|\psi\rangle$ up to a global phase.
 
 ```{code-cell} python
@@ -213,7 +213,7 @@ A fault in the teleportation, $4n$ operations on the data and the bare half, can
 
 The circuit below is one attempt at the chunk above, with $r = 1$.
 Its check is the propagated $XX$ stabilizer of the first pair, $X_0 \otimes C X_0 C^\dagger$, which for this $C$ is $X$ on `q2` times $Z$ on `q4`.
-The ancilla `q6` measures it, and the `DETECTOR` marks the outcome as one that is $+1$ unless a fault occurred.
+The ancilla `q6` measures it, and the `DETECTOR` marks the outcome as one that is $+1$ unless a fault occurs.
 The corrections are left out, as in the package.
 
 ```{code-cell} python
