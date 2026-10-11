@@ -59,6 +59,18 @@ REGIMES: tuple[tuple[str, NoiseModel], ...] = (
 # Phases of the run, which separate its random streams.
 CIRCUITS, DIRECT, PILOT, FINAL = 0, 1, 2, 3
 
+SEEDING = (
+    "each generator is seeded by numpy.random.SeedSequence("
+    "config.seed, spawn_key=key), where key is (0, part, n, "
+    "alpha index, circuit index) for a gate sequence of a "
+    "map, (1, part, regime index, n, alpha index, circuit "
+    "index) for the direct implementation, and (part, "
+    "regime index, n, alpha index, circuit index, family "
+    "index) followed by (2, t) for a pilot and (3, t) for a "
+    "final estimate; part is 0 for the curves and 1 for the "
+    "maps, and the alpha index is 0 on the curves"
+)
+
 
 @dataclasses.dataclass(frozen=True)
 class Config:
@@ -232,7 +244,14 @@ def run_direct(
 class Results:
     """The results file of a run, loaded, extended and saved."""
 
-    def __init__(self, path: Path, config: Config) -> None:
+    def __init__(
+        self,
+        path: Path,
+        config: Any,
+        *,
+        experiment: str = "payoff",
+        seeding: str = SEEDING,
+    ) -> None:
         self.path = path
         self.saved = -math.inf
         settings = json.loads(json.dumps(dataclasses.asdict(config)))
@@ -245,19 +264,9 @@ class Results:
                 )
         else:
             self.data = {
-                "experiment": "payoff",
+                "experiment": experiment,
                 "config": settings,
-                "seeding": (
-                    "each generator is seeded by numpy.random.SeedSequence("
-                    "config.seed, spawn_key=key), where key is (0, part, n, "
-                    "alpha index, circuit index) for a gate sequence of a "
-                    "map, (1, part, regime index, n, alpha index, circuit "
-                    "index) for the direct implementation, and (part, "
-                    "regime index, n, alpha index, circuit index, family "
-                    "index) followed by (2, t) for a pilot and (3, t) for a "
-                    "final estimate; part is 0 for the curves and 1 for the "
-                    "maps, and the alpha index is 0 on the curves"
-                ),
+                "seeding": seeding,
                 "sizes": {},
                 "circuits": {},
                 "direct": {},

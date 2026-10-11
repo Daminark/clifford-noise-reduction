@@ -210,3 +210,49 @@ def test_payoff_quick_run_records_every_unit_and_resumes(tmp_path):
 )
 def test_payoff_takes_at_least_one_check(size, n, r):
     assert _load("payoff").rule_r(size, n) == r
+
+
+def test_dense_quick_run_records_every_unit_and_resumes(tmp_path):
+    dense = _load("dense")
+    path = tmp_path / "dense.json.gz"
+    arguments = ["--quick", "--output", str(path), "--workers", "1"]
+    dense.main(arguments)
+    data = dense.payoff.load(path)
+    config = dense.QUICK
+
+    cases = sum(len(sizes) for sizes in data["sizes"].values())
+    assert len(data["direct"]) == cases
+    assert len(data["units"]) == cases * len(config.arms)
+    for key, unit in data["units"].items():
+        n = int(key.split("/")[1])
+        assert unit["s"] == n * (n - 1) // 2
+        assert unit["r"] >= 1
+        for t in unit["choice"].values():
+            if t is not None:
+                assert str(t) in unit["estimates"]
+                assert unit["pilots"][str(t)][1] <= max(config.budgets)
+    rows = dense.outcomes(data)
+    assert len(rows) == cases * len(config.arms) * len(config.budgets)
+    for row in rows:
+        assert math.isnan(row["rate"]) == (row["t"] is None)
+    assert "finished" in data["runs"][0]
+
+    dense.main(arguments)
+    again = dense.payoff.load(path)
+    assert again["units"] == data["units"]
+    assert again["direct"] == data["direct"]
+    assert len(again["runs"]) == 2
+
+
+def test_dense_circuits_are_complete_graphs():
+    circuit = _load("dense").complete_graph(4)
+
+    pairs = [
+        (
+            instruction.targets_copy()[k].value,
+            instruction.targets_copy()[k + 1].value,
+        )
+        for instruction in circuit
+        for k in range(0, len(instruction.targets_copy()), 2)
+    ]
+    assert pairs == [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
