@@ -41,5 +41,7 @@ uvx nox -l              # list the sessions
   Tests that take more than about a second are marked `slow`.
 - Markdown prose uses [semantic line breaks](https://sembr.org).
 - Commit messages have an imperative subject line and a body saying why.
+- The version comes from the git tag, through hatch-vcs.
+  A release tags its commit `vX.Y.Z` and sets the same version in `CITATION.cff` and `CHANGELOG.md`.
 
 Design decisions are recorded in [`docs/adr/`](docs/adr/).

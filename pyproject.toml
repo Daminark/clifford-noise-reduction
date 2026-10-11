@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "clifford-noise-reduction"
-version = "0.1.0"
+dynamic = ["version"]          # from the git tag, by hatch-vcs
 description = "Clifford Noise Reduction (CliNR) in Stim"
 authors = [{ name = "Amin Idelhaj" }]
 readme = "README.md"
@@ -43,8 +43,15 @@ docs = [
     "sphinx>=9.1.0",
 ]
 
+[tool.hatch.version]
+source = "vcs"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/clinr"]
+
+[tool.uv]
+# Rebuild the package when the commit or tags change, so its version is current.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.pytest]
 minversion = "9.0"             # the native table and strict need pytest 9

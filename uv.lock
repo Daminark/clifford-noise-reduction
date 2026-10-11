@@ -348,7 +348,6 @@ wheels = [
 
 [[package]]
 name = "clifford-noise-reduction"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
