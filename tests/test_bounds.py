@@ -8,7 +8,6 @@ import pytest
 import stim
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from scipy import stats
 
 from clinr import accounting, bounds, circuits, estimators, noise_models
 
@@ -249,16 +248,16 @@ def soundness_cases() -> list[Any]:
 def test_measured_logical_error_rate_never_exceeds_the_bound(
     n, t, r, restricted_checks, noisy_checks, draws, shots
 ):
-    """The protocol's rate over random check draws, within 5 standard errors.
+    """The bound is not below the rate's 99.9% lower confidence limit.
 
     The bound covers the protocol, which draws new checks for every attempt,
     so the measurement is the fresh-draw rate over draws; one fixed check
-    set may do worse. Its standard error is taken over the draws, so it
-    counts the spread between draws, which dominates, as well as shot noise.
-    The quick tier (8 draws of 2e4 shots) is coarse: in the noisiest cases
-    the 5 standard errors reach about half the bound, so it catches only a
-    grossly unsound bound. The precise tier (32 draws of 5e4 shots) is the
-    tighter check.
+    set may do worse. Its interval counts the spread between draws, which
+    dominates, as well as shot noise, and a sound bound lies below its
+    lower limit with probability at most 0.05%. The quick tier (8 draws of
+    2e4 shots) has few degrees of freedom, so its limit is low and it
+    catches only a grossly unsound bound; the precise tier (32 draws of
+    5e4 shots) is the tighter check.
     """
     noise = noise_models.asymmetric_noise(2e-3)
     circuit = seeded_circuit(n, 16 * n, seed=n)
@@ -277,8 +276,7 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
         )
         for _ in range(draws)
     ]
-    rate, _, high = estimators.logical_error_rate(estimates)
-    standard_error = (high - rate) / float(stats.t.ppf(0.975, draws - 1))
+    _, low, _ = estimators.logical_error_rate(estimates, confidence=0.999)
 
     bound = bounds.plog_bound(
         circuit,
@@ -290,7 +288,7 @@ def test_measured_logical_error_rate_never_exceeds_the_bound(
         noisy_checks=noisy_checks,
     )
 
-    assert rate <= bound + 5 * standard_error
+    assert low <= bound
 
 
 # ---------------------------------------------------------------------------

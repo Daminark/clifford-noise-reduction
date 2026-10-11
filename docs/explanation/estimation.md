@@ -13,7 +13,8 @@ kernelspec:
 
 {mod}`clinr.estimators` turns sampled shots into the protocol's logical error rate and gate overhead, with intervals.
 We explain what each estimator estimates and why its interval covers what it claims to, building on the argument of {doc}`the-scheme` that the shots in which every check passes have the protocol's output distribution.
-We begin with one draw of the checks, then turn to many draws and their intervals, and close with the design effect, which measures how much the draws differ.
+We begin with one draw of the checks, then turn to many draws: what they estimate, the variance over them, and the interval each quantity takes.
+We close with the design effect, which measures how much the draws differ.
 
 ```{code-cell} python
 ---
@@ -52,9 +53,9 @@ for family, restricted in (("uniform", False), ("restricted", True)):
 {func}`clinr.estimators.estimate_clinr` draws the checks once, builds the circuit and samples it, and the {class}`clinr.estimators.Estimate` it returns holds the counts.
 A shot is accepted when every detector passes, and the draw's logical error rate is the fraction of accepted shots in which some observable flips.
 
-Its interval is the Wilson score interval, {func}`clinr.estimators.wilson_interval`.
-Logical error rates sit near zero, where the Wald interval, the point estimate plus or minus a multiple of its standard error, leaves $[0, 1]$ and collapses to a point when no error is seen; the Wilson interval does neither.
-The interval is honest for the draw, since given the checks the shots are independent.
+Given the checks, the shots are independent, so the draw's errors are binomial over its accepted shots.
+Its interval is the Wilson score interval, {func}`clinr.estimators.wilson_interval`, a standard one for a binomial proportion near zero.
+There the Wald interval, the point estimate plus or minus a multiple of its standard error, leaves $[0, 1]$ and collapses to a point when no error is seen, since it takes the standard error at the estimate itself; the Wilson interval, which takes it at each candidate rate, does neither.
 
 For each chunk, the estimate also counts the shots that the chunk's own detectors accept.
 These are marginals, not factors of the overall acceptance.
@@ -75,6 +76,7 @@ The estimate of one draw is honest, but one draw is not the protocol, which draw
 The protocol draws new checks for every attempt, while all the shots of one estimate share one draw.
 So one estimate measures a different protocol, which keeps one set of checks for every attempt, and its shots are not independent samples of the actual protocol, since they are clustered by draw.
 Repeated calls give independent draws.
+In the language of survey sampling, the shots form a *clustered sample*: the draws are independent clusters, and the shots within one are correlated through its checks.
 {func}`clinr.estimators.logical_error_rate`, {func}`clinr.estimators.gate_overhead_over_draws` and {func}`clinr.estimators.design_effect` take a list of estimates and treat the draw, not the shot, as the unit of observation.
 
 For a draw $D$ of the checks, write $a(D)$ for the probability that an attempt passes them, $p(D)$ for the logical error rate given that it passes, and $m(D)$ for the operations of an attempt; for the overhead, all three are per chunk.
@@ -97,24 +99,44 @@ A draw's shots estimate $a(D_j)$ and $a(D_j) p(D_j)$ without bias, by the fracti
 The draws are independent samples of $D$, so means over draws estimate each expectation in the table.
 A draw counts once, whatever its number of shots.
 A draw that accepted no shots still counts toward the fresh readings, where it lowers the mean acceptance; the kept readings need every draw to have accepted, since $p$ and $m_k / a_k$ are otherwise undefined.
+What remains is how precise these estimates are, which the spread between the draws measures.
 
-## Intervals over draws
+## The variance over draws
 
-Each interval is a Student $t$ interval with $J - 1$ degrees of freedom over $J$ draws, with the variance estimated from the spread between the draws.
-Each draw's counts carry their own shot noise, so that spread includes the shot noise along with the variation between draws of the checks.
-
-The kept readings are means over draws, so their variance is the sample variance of the per-draw values divided by $J$.
-The fresh readings are ratios of means, so their variance comes from the delta method.
+The kept readings are means over draws, so their variance is the sample variance of the per-draw values divided by $J$, for $J$ draws.
+The fresh readings are ratios of means, which have no exact variance, so their variance comes from the delta method, the linearization that is standard for ratio estimators in survey sampling.
 For the logical error rate, with $e_j$ and $a_j$ the fractions of draw $j$'s shots accepted with an error and accepted, $\bar a$ the mean of the $a_j$, and the estimate $\hat R = \sum_j e_j / \sum_j a_j$, it is the standard variance of a ratio estimator,
 
 $$\widehat{\mathrm{Var}}(\hat R) = \frac{1}{J (J - 1)} \sum_j \left(\frac{e_j - \hat R a_j}{\bar a}\right)^2.$$
 
 The fresh overhead is a sum over the chunks of such ratios, and each draw's deviation is the sum of theirs.
-The interval on the logical error rate is clamped to $[0, 1]$, and with a single draw both bounds are `nan`.
+Each draw's counts carry their own shot noise, so the spread between the draws includes it along with the variation between draws of the checks: the variance between independent clusters accounts for every stage of sampling within them.
 
 A ratio estimator is biased by $O(1/J)$, as is any estimate of a probability given acceptance, even with new checks drawn for every shot.
 The standard error shrinks only like $1/\sqrt{J}$, so with many draws the bias is far below it.
 Precision and bias therefore both come from the number of draws, not the shots per draw, which is why {doc}`../how-to/repeated-draws` takes many draws of modest size.
+How a variance becomes an interval depends on the quantity, since the gate overhead and the logical error rate are of different kinds.
+
+## The intervals
+
+The gate overhead is a ratio of means of operation counts, at least 1 and far from any boundary, and its variance does not depend on its value.
+Its estimate is a smooth function of means over independent draws, so it is close to normal, and {func}`clinr.estimators.gate_overhead_over_draws` gives the Student $t$ interval with $J - 1$ degrees of freedom, which allows for a variance estimated from $J$ draws.
+
+The logical error rate is a proportion near zero, where neither holds: its distribution is lopsided, and its variance is tied to its value, so draws that see few errors also report a small variance.
+For a proportion from a clustered sample, the standard interval is that of Korn and Graubard (Survey Methodology 24, 193 (1998)), which the NCHS data presentation standards for proportions adopt, and {func}`clinr.estimators.logical_error_rate` returns it.
+It converts the variance over draws into an *effective number of shots*, the number of independent shots whose binomial variance at the estimate would match it,
+
+$$n_e = \frac{\hat p (1 - \hat p)}{\widehat{\mathrm{Var}}(\hat p)},$$
+
+scaled by the squared ratio of the Student $t$ quantiles at the shots' and the draws' degrees of freedom, which allows for a variance estimated from $J$ draws, and capped at the shots accepted.
+The interval is then the Clopper-Pearson interval, the exact binomial one, for $\hat p n_e$ errors in $n_e$ shots.
+
+When the variance carries no information about the clustering, because no draw saw an error or the draws do not differ, the effective number is the shots accepted, and the interval is the exact one for the pooled shots.
+With no errors in $N$ shots, it runs from 0 to $1 - 0.025^{1/N}$, about $3.7/N$, where the Student $t$ interval would collapse to a point.
+Few draws or few errors thus make the interval wide rather than wrong, and the test suite checks that it covers the true rate in at least 94% of trials at about one expected error over 10 draws.
+With a single draw there is no spread between draws to measure, and both intervals are `nan`.
+Before its scaling, the ratio of the shots accepted to the effective number is the variance of the estimate relative to the binomial variance.
+For draws of equal size it is close to the design effect, to which we now turn.
 
 ## The design effect
 

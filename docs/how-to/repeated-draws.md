@@ -48,7 +48,7 @@ draws = [
 
 ## Summarize them
 
-{func}`clinr.estimators.logical_error_rate` and {func}`clinr.estimators.gate_overhead_over_draws` give the protocol's logical error rate and gate overhead, with the checks redrawn for every attempt, each with a Student t interval over the draws.
+{func}`clinr.estimators.logical_error_rate` and {func}`clinr.estimators.gate_overhead_over_draws` give the protocol's logical error rate and gate overhead, with the checks redrawn for every attempt, each with an interval over the draws: Korn and Graubard's for the rate, a proportion from a clustered sample, and a Student t interval for the overhead.
 Pass `checks="kept"` for the values with one check set kept for every attempt.
 {func}`clinr.estimators.design_effect` compares the spread between draws with the spread within them; well above 1, a Wilson interval on the pooled shots would be too narrow.
 

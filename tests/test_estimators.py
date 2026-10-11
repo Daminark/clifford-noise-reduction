@@ -555,17 +555,48 @@ def test_gate_overhead_rejects_a_chunk_that_accepted_nothing():
 SPREAD = [draw(80, 800), draw(96, 800), draw(112, 800)]
 
 
-def test_kept_logical_error_rate_is_a_student_t_interval_on_draw_rates():
-    """Worked by hand from rates 0.10, 0.12 and 0.14.
+def clopper_pearson_by_f(
+    errors: float, shots: float, confidence: float = 0.95
+) -> tuple[float, float]:
+    """Return the Clopper-Pearson bounds in the F form of the NCHS standards.
 
-    Mean 0.12, standard error 0.02 / sqrt(3), and t = 4.3027 at two degrees
-    of freedom.
+    An oracle independent of the package's beta-quantile form; ``errors``
+    and ``shots`` may be effective, not whole, counts.
     """
-    half = 4.302652729749462 * 0.02 / math.sqrt(3)
+    alpha = 1 - confidence
+    lo = 0.0
+    if errors > 0:
+        f = stats.f.ppf(alpha / 2, 2 * errors, 2 * (shots - errors + 1))
+        lo = 1 / (1 + (shots - errors + 1) / (errors * f))
+    hi = 1.0
+    if errors < shots:
+        f = stats.f.ppf(1 - alpha / 2, 2 * (errors + 1), 2 * (shots - errors))
+        hi = 1 / (1 + (shots - errors) / ((errors + 1) * f))
+    return lo, hi
 
+
+def t_ratio_squared(shots: int, draws: int) -> float:
+    """Return the squared ratio of the 97.5% t quantiles, shots over draws."""
+    return float(
+        (stats.t.ppf(0.975, shots - 1) / stats.t.ppf(0.975, draws - 1)) ** 2
+    )
+
+
+def test_kept_logical_error_rate_is_a_korn_graubard_interval_on_draw_rates():
+    """Worked by hand from rates 0.10, 0.12 and 0.14 over 800 shots each.
+
+    Mean 0.12 with variance 0.02 ** 2 / 3 over the draws, so the binomial
+    variance 0.12 * 0.88 over it is 792 effective shots; the t quantiles at
+    2399 and 2 degrees of freedom scale that by 0.2077, to 164.51.
+    """
+    effective = 792 * t_ratio_squared(2400, 3)
+
+    assert effective == pytest.approx(164.51, abs=0.01)
     assert estimators.logical_error_rate(
         SPREAD, checks="kept"
-    ) == pytest.approx((0.12, 0.12 - half, 0.12 + half))
+    ) == pytest.approx(
+        (0.12, *clopper_pearson_by_f(0.12 * effective, effective))
+    )
 
 
 def test_fresh_logical_error_rate_weights_draws_by_their_acceptance():
@@ -575,14 +606,21 @@ def test_fresh_logical_error_rate_weights_draws_by_their_acceptance():
     Fresh: mean fraction failed 0.025 over mean fraction accepted 0.75,
     that is 1/30; the delta-method deviations, (0.01 - 1/30 * 1) / 0.75
     and (0.04 - 1/30 * 0.5) / 0.75, are -7/225 and +7/225, so the standard
-    error is 7/225. Kept: the mean of 0.01 and 0.08, that is 0.045.
+    error is 7/225 and the effective number of the 1500 accepted shots is
+    (1/30) (29/30) / (7/225) ** 2 = 33.29, scaled by the t quantiles at 1499
+    and 1 degrees of freedom. Kept: the mean of 0.01 and 0.08, that is
+    0.045.
     """
     draws = [draw(10, 1000), draw(40, 500)]
-    half = float(stats.t.ppf(0.975, 1)) * 7 / 225
+    effective = (
+        (1 / 30) * (29 / 30) / (7 / 225) ** 2 * t_ratio_squared(1500, 2)
+    )
 
-    point, _, hi = estimators.logical_error_rate(draws)
+    point, lo, hi = estimators.logical_error_rate(draws)
 
-    assert (point, hi) == pytest.approx((1 / 30, 1 / 30 + half))
+    assert (point, lo, hi) == pytest.approx(
+        (1 / 30, *clopper_pearson_by_f(effective / 30, effective))
+    )
     assert estimators.logical_error_rate(draws, checks="kept")[
         0
     ] == pytest.approx(0.045)
@@ -604,10 +642,57 @@ def test_fresh_logical_error_rate_rejects_draws_that_all_accepted_nothing():
         estimators.logical_error_rate([draw(0, 0), draw(0, 0)])
 
 
-def test_logical_error_rate_is_clamped_at_zero():
-    draws = [draw(10, 1000), draw(20, 1000), draw(30, 1000)]
+@pytest.mark.parametrize("checks", ["fresh", "kept"])
+def test_logical_error_rate_without_errors_does_not_collapse(checks):
+    """No draw saw an error, so the interval is the exact binomial one.
 
-    assert estimators.logical_error_rate(draws)[1] == 0.0
+    Its upper end at 0 errors in 3000 shots is 1 - 0.025 ** (1 / 3000).
+    """
+    draws = [draw(0, 1000)] * 3
+
+    point, lo, hi = estimators.logical_error_rate(draws, checks=checks)
+
+    assert (point, lo) == (0.0, 0.0)
+    assert hi == pytest.approx(1 - 0.025 ** (1 / 3000))
+
+
+@pytest.mark.parametrize("checks", ["fresh", "kept"])
+def test_logical_error_rate_of_identical_draws_is_the_pooled_exact_interval(
+    checks,
+):
+    """Draws that do not differ show no clustering, so every shot counts."""
+    draws = [draw(10, 1000)] * 3
+    exact = stats.binomtest(30, 3000).proportion_ci(0.95, method="exact")
+
+    assert estimators.logical_error_rate(draws, checks=checks) == (
+        pytest.approx((0.01, exact.low, exact.high))
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("checks", ["fresh", "kept"])
+def test_logical_error_rate_covers_a_rare_rate_that_varies_between_draws(
+    checks,
+):
+    """At about one expected error over 10 draws, coverage stays near 95%.
+
+    Each draw's rate is lognormal about 1e-4, with a log-standard deviation
+    of 0.5, over 1000 shots. 2000 repetitions put the coverage within about
+    0.005; the former Student t interval covered 62% here.
+    """
+    rng = np.random.default_rng(3)
+    mean, sigma = 1e-4, 0.5
+    covered = 0
+    for _ in range(2000):
+        rates = rng.lognormal(math.log(mean) - sigma**2 / 2, sigma, 10)
+        draws = [
+            estimators.Estimate(1000, 1000, int(errors), 1, 0, 1)
+            for errors in rng.binomial(1000, rates)
+        ]
+        _, lo, hi = estimators.logical_error_rate(draws, checks=checks)
+        covered += lo <= mean <= hi
+
+    assert covered / 2000 >= 0.94
 
 
 @pytest.mark.parametrize("checks", ["fresh", "kept"])

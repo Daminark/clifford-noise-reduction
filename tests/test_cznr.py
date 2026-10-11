@@ -466,7 +466,7 @@ def test_cznr_first_order_rate_is_below_clinr_on_complete_graphs(n, t, r):
 
 @pytest.mark.parametrize(("n", "t", "r"), [(3, 1, 2), (6, 1, 4), (6, 2, 2)])
 def test_measured_cznr_rate_never_exceeds_the_bound(n, t, r):
-    """The fresh-draw rate over draws, with 5 standard errors, as for CliNR."""
+    """The bound is not below the rate's 99.9% lower limit, as for CliNR."""
     noise = noise_models.asymmetric_noise(2e-3)
     circuit = complete_graph(n)
     rng = np.random.default_rng(10 * n + r)
@@ -475,12 +475,9 @@ def test_measured_cznr_rate_never_exceeds_the_bound(n, t, r):
         estimators.estimate_cznr(circuit, n, t, r, noise, 20_000, rng)
         for _ in range(draws)
     ]
-    rate, _, high = estimators.logical_error_rate(estimates)
-    standard_error = (high - rate) / float(stats.t.ppf(0.975, draws - 1))
+    _, low, _ = estimators.logical_error_rate(estimates, confidence=0.999)
 
-    bound = bounds.cznr_plog_bound(circuit, n, t, r, noise)
-
-    assert rate <= bound + 5 * standard_error
+    assert low <= bounds.cznr_plog_bound(circuit, n, t, r, noise)
 
 
 # ---------------------------------------------------------------------------

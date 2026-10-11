@@ -730,10 +730,19 @@ def logical_error_rate(
     averaged over check sets: the mean of the per-draw rates. Each draw
     counts equally, whatever its number of shots.
 
-    The interval is the two-sided Student t interval with one degree of
-    freedom fewer than the number of draws, its variance estimated over the
+    The draws are independent clusters of correlated shots, so the
+    interval is the Korn-Graubard interval for a proportion from a
+    clustered sample (Korn and Graubard, Survey Methodology 24, 193
+    (1998)), as the NCHS data presentation standards for proportions
+    specify it. The variance of the point estimate is estimated over the
     draws by the delta method, so it counts the spread between draws as
-    well as shot noise. Its bounds are clamped to [0, 1].
+    well as shot noise. Dividing the binomial variance at the point
+    estimate by it gives an effective number of shots, scaled by the ratio
+    of the Student t quantiles at the shots' and the draws' degrees of
+    freedom, and capped at the shots accepted. The interval is the
+    Clopper-Pearson interval at that effective number. When the variance
+    carries no information, at a point estimate of 0 or 1 or with draws
+    that do not differ, the effective number is the shots accepted.
 
     Parameters
     ----------
@@ -780,8 +789,45 @@ def logical_error_rate(
         deviations = [rate - point for rate in rates]
     if len(estimates) < 2:
         return point, math.nan, math.nan
-    half = _half_width(deviations, confidence)
-    return point, max(0.0, point - half), min(1.0, point + half)
+    draws = len(estimates)
+    variance = sum(d * d for d in deviations) / (draws * (draws - 1))
+    shots = sum(estimate.accepted for estimate in estimates)
+    return (point, *_korn_graubard(point, variance, shots, draws, confidence))
+
+
+def _korn_graubard(
+    point: float, variance: float, shots: int, draws: int, confidence: float
+) -> tuple[float, float]:
+    """Return the Korn-Graubard bounds for a proportion over draws.
+
+    ``point`` is the estimate, ``variance`` its variance over the
+    ``draws`` clusters, and ``shots`` the units behind it. Requires at
+    least two draws and one shot.
+    """
+    assert draws >= 2, "the interval needs at least two draws"
+    assert shots >= 1, "the interval needs at least one shot"
+    tail = (1.0 + confidence) / 2.0
+    effective = float(shots)
+    if 0.0 < point < 1.0 and variance > 0.0:
+        # The t quantile at the shots' degrees of freedom is at most the one
+        # at the draws', so the ratio shrinks the effective number.
+        ratio = float(
+            stats.t.ppf(tail, max(shots, draws) - 1)
+            / stats.t.ppf(tail, draws - 1)
+        )
+        effective = min(effective, point * (1.0 - point) / variance * ratio**2)
+    errors = point * effective
+    lo = (
+        0.0
+        if errors == 0.0
+        else float(stats.beta.ppf(1.0 - tail, errors, effective - errors + 1))
+    )
+    hi = (
+        1.0
+        if errors == effective
+        else float(stats.beta.ppf(tail, errors + 1, effective - errors))
+    )
+    return lo, hi
 
 
 def design_effect(estimates: list[Estimate]) -> float:
