@@ -12,7 +12,7 @@ kernelspec:
 # Measure checks of your own choosing
 
 {func}`clinr.estimators.estimate_clinr` draws its checks at random.
-This guide evaluates checks you choose instead, here the lightest stabilizers of the resource state: by sampling the circuit with Stim, exactly to first order in the error rates with {mod}`clinr.first_order`, and in operations with {mod}`clinr.accounting`.
+This guide evaluates checks you choose instead, here the lightest stabilizers of each chunk's resource state, in three ways: by sampling the circuit with Stim, exactly to first order in the error rates with {mod}`clinr.first_order`, and in operations with {mod}`clinr.accounting`.
 The analytic bounds and {func}`clinr.estimators.gate_overhead` cover only the two random families.
 
 ## Find the stabilizers of each chunk's resource state
@@ -109,7 +109,7 @@ for fault in faults:
 print({region: round(rate, 5) for region, rate in by_region.items()})
 ```
 
-The first-order values are exact for these checks, and differ from the sampled ones by the effect of several faults in one shot.
+The first-order values differ from the sampled ones by the effect of several faults in one shot, and by the shot noise of the sample.
 
 ## Price the overhead
 

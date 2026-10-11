@@ -1,6 +1,7 @@
 # Clifford Noise Reduction
 
-An implementation in [Stim](https://github.com/quantumlib/Stim) of the Clifford Noise Reduction (CliNR) scheme of Delfosse and Tham, [arXiv:2407.06583](https://arxiv.org/abs/2407.06583).
+An implementation in [Stim](https://github.com/quantumlib/Stim) of the Clifford Noise Reduction (CliNR) scheme of Delfosse and Tham, [arXiv:2407.06583](https://arxiv.org/abs/2407.06583), and of its variant CZNR for circuits of `CZ` gates.
+The {doc}`tutorial <tutorial/getting-started>` is the place to start, and the {doc}`summary of findings <explanation/findings>` collects what the simulations show.
 
 ```{toctree}
 ---

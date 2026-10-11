@@ -10,7 +10,7 @@ It replaces the earlier demonstration of the scheme with one chunk, which had no
 
 ### Added
 
-- `clinr.protocol`: the circuits of CliNR, for any circuit of single- and two-qubit Clifford gates split into $t$ chunks with $r$ checks each, and of CZNR, for circuits of `CZ` gates, each with a Choi harness that reads out the implemented channel, and the direct implementation.
+- `clinr.protocol`: the circuits of the direct implementation, of CliNR, for any circuit of single- and two-qubit Clifford gates split into $t$ chunks with $r$ checks each, and of CZNR, for circuits of `CZ` gates, each with a Choi harness that reads out the implemented channel.
 - `clinr.checks`: checks drawn uniformly from the resource state's stabilizer group, or for CliNR from the restricted family of the paper's numerics.
 - `clinr.bounds`: bounds on the logical error rate and the gate overhead, rederiving the paper's Theorems 1 and 3 with four error rates, and a choice of $(t, r)$ or the direct implementation by them.
 - `clinr.accounting`: the operation counts of each region of a built circuit, which the bounds and the estimators share.

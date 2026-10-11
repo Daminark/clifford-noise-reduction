@@ -88,8 +88,7 @@ print(f"logical error bound: {plog:.4f}")
 print(f"gate overhead bound: {overhead:.2f}")
 ```
 
-Both bounds sit above what we measured.
-Notice that the logical error bound sits above even the direct rate: it is a guarantee, and a loose one.
+Both bounds lie above what we measured, and the logical error bound lies above even the direct rate: it is a guarantee, and a loose one.
 
 ## Vary the number of checks
 
@@ -107,7 +106,7 @@ for r in range(0, 9, 2):
 ```
 
 The output should show the measured rate falling sharply over the first few checks and then leveling off, while the overhead keeps climbing and the bound barely moves.
-Notice also that with no checks, CliNR does worse than running the circuit directly: the resource state and the teleportation only add operations, and so faults.
+With no checks, CliNR does worse than running the circuit directly: the resource state and the teleportation only add operations, and so faults.
 
 ## Let the package choose
 
