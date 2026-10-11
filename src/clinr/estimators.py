@@ -136,10 +136,10 @@ class Estimate:
         Checks measured in each chunk.
     chunk_weight : tuple of int, optional
         Total weight of each chunk's checks: at most its number of checks
-        times the family's worst-case weight, ``n + 1`` if
-        ``restricted_checks`` and ``2n`` otherwise, and at least its number
-        of checks if ``restricted_checks``, since that family excludes the
-        identity.
+        times the family's worst-case weight, ``n`` if ``cznr``, ``n + 1``
+        if ``restricted_checks`` and ``2n`` otherwise, and at least its
+        number of checks if ``restricted_checks``, since that family
+        excludes the identity.
     chunk_counts : tuple of tuple of (int, int), optional
         Gate counts ``(s1, s2)`` of each chunk, summing to ``(s1, s2)``.
     noisy_checks, restricted_checks, native_plus : bool, optional
@@ -148,7 +148,7 @@ class Estimate:
         defaults.
     cznr : bool, optional
         True for an estimate of CZNR (:func:`estimate_cznr`), whose checks
-        weigh at most ``n``, and at least 1 each if ``restricted_checks``.
+        are drawn uniformly, so ``restricted_checks`` is then False.
 
     The four per-chunk tuples have one length: the number of chunks, or
     zero for the direct implementation. All counts are non-negative.
@@ -219,6 +219,11 @@ class Estimate:
                 "every chunk accepts at least the "
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
+            )
+        if self.cznr and self.restricted_checks:
+            raise ValueError(
+                "CZNR draws uniform checks only, so cznr and "
+                "restricted_checks cannot both be set"
             )
         least = 1 if self.restricted_checks else 0
         if self.cznr:
@@ -406,7 +411,6 @@ def estimate_cznr(
     rng: np.random.Generator,
     *,
     noisy_checks: bool = True,
-    restricted_checks: bool = False,
     native_plus: bool = False,
 ) -> Estimate:
     """Sample ``CZNR_{t,r}`` applied to a ``CZ`` circuit under fresh checks.
@@ -423,8 +427,6 @@ def estimate_cznr(
         As in :func:`estimate_clinr`.
     noisy_checks, native_plus : bool, optional
         As in :func:`clinr.protocol.build_cznr_tr`.
-    restricted_checks : bool, optional
-        As in :func:`clinr.checks.draw_cznr_checks`.
 
     Returns
     -------
@@ -441,9 +443,7 @@ def estimate_cznr(
     _check_rng(rng)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
-    drawn = checks.draw_cznr_checks(
-        circuit, n, t, r, rng, restricted_checks=restricted_checks
-    )
+    drawn = checks.draw_cznr_checks(circuit, n, t, r, rng)
     built = protocol.build_cznr_tr(
         circuit,
         n,
@@ -471,7 +471,6 @@ def estimate_cznr(
         tuple(sum(check.weight for check in chunk) for chunk in drawn),
         chunk_counts,
         noisy_checks=noisy_checks,
-        restricted_checks=restricted_checks,
         native_plus=native_plus,
         cznr=True,
     )

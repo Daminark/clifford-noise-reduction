@@ -7,8 +7,8 @@ Theorem 1 of [1]_ assumes; or the restricted family of [1]_, Sec. V, the ``3n``
 stabilizers propagated from the Bell pairs, whose weight is at most
 ``n + 1``. :mod:`clinr.protocol` measures the checks and :mod:`clinr.bounds`
 prices what each family detects. For CZNR, the variant for circuits of
-``CZ`` gates, the checks are stabilizers of a graph state, drawn from its
-full stabilizer group or from its ``n`` generators.
+``CZ`` gates, the checks are drawn from the full stabilizer group of a graph
+state, as Appendix E of [1]_ assumes.
 
 References
 ----------
@@ -147,14 +147,13 @@ def draw_cznr_checks(
     t: int,
     r: int,
     rng: np.random.Generator,
-    *,
-    restricted_checks: bool = False,
 ) -> list[list[stim.PauliString]]:
     """Draw ``r`` checks for each of the ``t`` chunks of a ``CZ`` circuit.
 
-    The checks are stabilizers of each chunk's graph state
-    (:func:`clinr.protocol.graph_state_gens`), drawn independently and
-    identically, with replacement, as in :func:`draw_checks`.
+    The checks are drawn independently and uniformly, with replacement, from
+    the stabilizer group of each chunk's graph state
+    (:func:`clinr.protocol.graph_state_gens`), identity included: each
+    generator enters the product with probability 1/2.
 
     Parameters
     ----------
@@ -162,12 +161,6 @@ def draw_cznr_checks(
         The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``.
     n, t, r, rng
         As in :func:`draw_checks`.
-    restricted_checks : bool, optional
-        If True, draw uniformly from the ``n`` generators
-        ``X_i prod_j Z_j`` of the graph state, of weight one more than the
-        degree of ``i``. If False, draw uniformly from the full stabilizer
-        group, identity included: each generator enters the product with
-        probability 1/2.
 
     Returns
     -------
@@ -192,11 +185,6 @@ def draw_cznr_checks(
     checks = []
     for chunk in protocol.chunk_circuit(circuit, n, t):
         gens = protocol.graph_state_gens(chunk.to_tableau())
-        if restricted_checks:
-            checks.append(
-                [gens[int(rng.integers(len(gens)))] for _ in range(r)]
-            )
-            continue
         chunk_checks: list[stim.PauliString] = []
         for _ in range(r):
             product = stim.PauliString(n)

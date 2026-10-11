@@ -601,28 +601,6 @@ def choose_tr(
     return best
 
 
-def _cznr_families(
-    chunks: list[stim.Circuit], n: int, r: int, restricted_checks: bool
-) -> list[_Family]:
-    """Return the family of each chunk's checks under CZNR.
-
-    A damaging fault on a graph state anticommutes with at least one of its
-    ``n`` generators, since they generate the stabilizer group, so a
-    generator drawn uniformly misses it with probability at most
-    ``1 - 1/n``; ``Z`` on one qubit attains this. A uniform element of the
-    group misses it with probability ``1/2``, and has weight at most ``n``.
-    """
-    if not restricted_checks:
-        return [_Family(r, 0.5, n)] * len(chunks)
-    families = []
-    for chunk in chunks:
-        gens = protocol.graph_state_gens(chunk.to_tableau())
-        families.append(
-            _Family(r, (n - 1) / n, max(gen.weight for gen in gens))
-        )
-    return families
-
-
 def cznr_plog_bound(
     circuit: stim.Circuit,
     n: int,
@@ -631,18 +609,15 @@ def cznr_plog_bound(
     noise: NoiseModel,
     *,
     noisy_checks: bool = True,
-    restricted_checks: bool = False,
     native_plus: bool = False,
 ) -> float:
     """Bound the logical error rate of ``CZNR_{t,r}`` applied to ``circuit``.
 
     The bound of :func:`plog_bound`, with CZNR's regions in place of
     CliNR's: Theorem 3 of arXiv:2407.06583 with the same departures from
-    the paper as :func:`plog_bound`'s from Theorem 1. A uniform check misses
-    a damaging fault with probability ``1/2`` and weighs at most ``n``; a
-    generator ``X_i prod_j Z_j`` misses it with probability at most
-    ``1 - 1/n`` and weighs at most one more than the chunk's largest
-    degree.
+    the paper as :func:`plog_bound`'s from Theorem 1. A check drawn
+    uniformly from the graph state's stabilizer group misses a damaging
+    fault with probability ``1/2`` and weighs at most ``n``.
 
     Parameters
     ----------
@@ -650,10 +625,6 @@ def cznr_plog_bound(
         The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``.
     n, t, r, noise, noisy_checks, native_plus
         As in :func:`plog_bound`.
-    restricted_checks : bool, optional
-        If True, price draws from the generators of each chunk's graph
-        state; if False, from its full stabilizer group, as
-        :func:`clinr.checks.draw_cznr_checks` draws them.
 
     Returns
     -------
@@ -675,7 +646,7 @@ def cznr_plog_bound(
         [accounting.gate_counts(chunk) for chunk in chunks],
         noise,
         _cznr(n, native_plus),
-        _cznr_families(chunks, n, r, restricted_checks),
+        [_Family(r, 0.5, n)] * len(chunks),
         noisy_checks,
         native_plus,
     )
@@ -689,12 +660,11 @@ def cznr_overhead_bound(
     noise: NoiseModel,
     *,
     noisy_checks: bool = True,
-    restricted_checks: bool = False,
     native_plus: bool = False,
 ) -> float:
     """Bound the gate overhead of ``CZNR_{t,r}`` applied to ``circuit``.
 
-    :func:`overhead_bound` with CZNR's regions and the families of
+    :func:`overhead_bound` with CZNR's regions and the checks of
     :func:`cznr_plog_bound`.
 
     Parameters
@@ -702,7 +672,7 @@ def cznr_overhead_bound(
     circuit : stim.Circuit
         The circuit ``C``, of ``CZ`` gates only, on qubits ``[0, n)``, with
         at least one gate.
-    n, t, r, noise, noisy_checks, restricted_checks, native_plus
+    n, t, r, noise, noisy_checks, native_plus
         As in :func:`cznr_plog_bound`.
 
     Returns
@@ -724,7 +694,7 @@ def cznr_overhead_bound(
         [accounting.gate_counts(chunk) for chunk in chunks],
         noise,
         _cznr(n, native_plus),
-        _cznr_families(chunks, n, r, restricted_checks),
+        [_Family(r, 0.5, n)] * len(chunks),
         noisy_checks,
         native_plus,
     )

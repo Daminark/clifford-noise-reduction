@@ -60,21 +60,11 @@ def test_graph_state_gens_of_a_path_are_x_times_z_on_the_neighbors():
     assert [str(gen)[1:] for gen in gens] == ["XZ_", "ZXZ", "_ZX"]
 
 
-@pytest.mark.parametrize("restricted_checks", [False, True])
-def test_drawn_checks_stabilize_their_chunk_and_restricted_ones_are_gens(
-    restricted_checks,
-):
+def test_drawn_checks_stabilize_their_chunk():
     n, t, r = 4, 3, 5
     circuit = cz_circuit(n, 12, seed=1)
 
-    drawn = checks.draw_cznr_checks(
-        circuit,
-        n,
-        t,
-        r,
-        np.random.default_rng(1),
-        restricted_checks=restricted_checks,
-    )
+    drawn = checks.draw_cznr_checks(circuit, n, t, r, np.random.default_rng(1))
 
     assert [len(chunk_checks) for chunk_checks in drawn] == [r] * t
     for chunk, chunk_checks in zip(
@@ -84,17 +74,10 @@ def test_drawn_checks_stabilize_their_chunk_and_restricted_ones_are_gens(
         for check in chunk_checks:
             assert len(check) == n
             assert all(check.commutes(gen) for gen in gens)
-            if restricted_checks:
-                assert any(check == gen for gen in gens)
 
 
-def test_a_generator_catches_a_damaging_fault_at_least_one_time_in_n():
-    """Exhaustively over Paulis on the graph state of the complete graph.
-
-    A uniform element of the group catches every damaging fault with
-    probability exactly 1/2; a uniform generator with probability at least
-    1/n, attained by a single Z.
-    """
+def test_a_uniform_check_catches_every_damaging_fault_half_the_time():
+    """Exhaustively over Paulis on the graph state of the complete graph."""
     n = 3
     tableau = protocol.chunk_circuit(complete_graph(n), n, 1)[0].to_tableau()
     gens = protocol.graph_state_gens(tableau)
@@ -106,18 +89,12 @@ def test_a_generator_catches_a_damaging_fault_at_least_one_time_in_n():
                 element *= gen
         group.append(element)
 
-    least = 1.0
     for letters in itertools.product("IXYZ", repeat=n):
         error = stim.PauliString("".join(letters))
         if all(error.commutes(element) for element in group):
             continue  # harmless: a stabilizer, up to sign
         caught = sum(not error.commutes(element) for element in group)
         assert caught == len(group) // 2
-        least = min(least, sum(not error.commutes(g) for g in gens) / n)
-
-    assert least == pytest.approx(1 / n)
-    single_z = stim.PauliString("Z" + "I" * (n - 1))
-    assert sum(not single_z.commutes(gen) for gen in gens) == 1
 
 
 @pytest.mark.parametrize(
@@ -162,18 +139,10 @@ def assert_exact(built: stim.Circuit) -> None:
 @pytest.mark.parametrize("n", [1, 2, 4])
 @pytest.mark.parametrize("t", [1, 2, 3])
 @pytest.mark.parametrize("r", [0, 2])
-@pytest.mark.parametrize("restricted_checks", [False, True])
 @pytest.mark.parametrize("native_plus", [False, True])
-def test_cznr_is_exact_at_zero_noise(n, t, r, restricted_checks, native_plus):
+def test_cznr_is_exact_at_zero_noise(n, t, r, native_plus):
     circuit = cz_circuit(n, 10, seed=n + t)
-    drawn = checks.draw_cznr_checks(
-        circuit,
-        n,
-        t,
-        r,
-        np.random.default_rng(2),
-        restricted_checks=restricted_checks,
-    )
+    drawn = checks.draw_cznr_checks(circuit, n, t, r, np.random.default_rng(2))
 
     built = protocol.build_cznr_tr(
         circuit, n, drawn, NOISELESS, native_plus=native_plus
@@ -238,21 +207,15 @@ def fault_locations(built: stim.Circuit) -> dict[str, accounting.Region]:
     size=st.integers(0, 20),
     t=st.integers(1, 3),
     r=st.integers(0, 3),
-    restricted_checks=st.booleans(),
     native_plus=st.booleans(),
     seed=st.integers(0, 2**32 - 1),
 )
 def test_cznr_regions_count_every_fault_location_the_builder_emits(
-    n, size, t, r, restricted_checks, native_plus, seed
+    n, size, t, r, native_plus, seed
 ):
     circuit = cz_circuit(n, size, seed)
     drawn = checks.draw_cznr_checks(
-        circuit,
-        n,
-        t,
-        r,
-        np.random.default_rng(seed),
-        restricted_checks=restricted_checks,
+        circuit, n, t, r, np.random.default_rng(seed)
     )
     built = protocol.build_cznr_tr(
         circuit, n, drawn, NOISE, native_plus=native_plus
@@ -335,21 +298,6 @@ def test_cznr_overhead_bound_is_exact_without_checks():
     assert bound == 9.0
 
 
-def test_restricted_bound_charges_the_largest_generator_of_the_chunk():
-    # Each chunk's check is charged at its largest generator's weight: 4
-    # for the star centered at 0, 3 for the path, with as many gates.
-    star = stim.Circuit("CZ 0 1 0 2 0 3")
-    path = stim.Circuit("CZ 0 1 1 2 2 3")
-    noise = noise_models.uniform_noise(1e-3)
-
-    def overhead(circuit: stim.Circuit) -> float:
-        return bounds.cznr_overhead_bound(
-            circuit, 4, 1, 1, noise, restricted_checks=True
-        )
-
-    assert overhead(star) > overhead(path)
-
-
 @pytest.mark.parametrize(
     "function", [bounds.cznr_plog_bound, bounds.cznr_overhead_bound]
 )
@@ -359,34 +307,20 @@ def test_cznr_bounds_reject_gates_other_than_cz(function):
 
 
 @pytest.mark.parametrize(("n", "t", "r"), [(3, 1, 2), (6, 1, 4), (6, 2, 2)])
-@pytest.mark.parametrize("restricted_checks", [False, True])
-def test_measured_cznr_rate_never_exceeds_the_bound(
-    n, t, r, restricted_checks
-):
+def test_measured_cznr_rate_never_exceeds_the_bound(n, t, r):
     """The fresh-draw rate over draws, with 5 standard errors, as for CliNR."""
     noise = noise_models.asymmetric_noise(2e-3)
     circuit = complete_graph(n)
     rng = np.random.default_rng(10 * n + r)
     draws = 8
     estimates = [
-        estimators.estimate_cznr(
-            circuit,
-            n,
-            t,
-            r,
-            noise,
-            20_000,
-            rng,
-            restricted_checks=restricted_checks,
-        )
+        estimators.estimate_cznr(circuit, n, t, r, noise, 20_000, rng)
         for _ in range(draws)
     ]
     rate, _, high = estimators.logical_error_rate(estimates)
     standard_error = (high - rate) / float(stats.t.ppf(0.975, draws - 1))
 
-    bound = bounds.cznr_plog_bound(
-        circuit, n, t, r, noise, restricted_checks=restricted_checks
-    )
+    bound = bounds.cznr_plog_bound(circuit, n, t, r, noise)
 
     assert rate <= bound + 5 * standard_error
 
@@ -395,24 +329,19 @@ def test_measured_cznr_rate_never_exceeds_the_bound(
 # Estimates
 # ---------------------------------------------------------------------------
 def test_cznr_gate_overhead_at_zero_noise_counts_the_built_operations():
-    # Complete graph on 3 qubits, t = 1, r = 2 generators of weight 3:
-    # |+> on 3 (6), 3 CZ, two checks of 3 + 4 (14), teleportation (6).
+    # Complete graph on 3 qubits, t = 1, r = 2: |+> on 3 (6), 3 CZ, two
+    # checks of total weight W, each with 4 more operations (8 + W), and
+    # the teleportation (6).
     n = 3
     estimate = estimators.estimate_cznr(
-        complete_graph(n),
-        n,
-        1,
-        2,
-        NOISELESS,
-        100,
-        np.random.default_rng(0),
-        restricted_checks=True,
+        complete_graph(n), n, 1, 2, NOISELESS, 100, np.random.default_rng(0)
     )
+    weight = estimate.chunk_weight[0]
 
     assert estimate.cznr
     assert estimate.acceptance == 1.0
     assert estimators.gate_overhead(estimate) == pytest.approx(
-        (6 + 3 + 14 + 6) / 3
+        (6 + 3 + 8 + weight + 6) / 3
     )
 
 
@@ -453,4 +382,11 @@ def test_a_cznr_estimate_rejects_checks_heavier_than_n():
             chunk_weight=(3,),
             chunk_counts=((0, 1),),
             cznr=True,
+        )
+
+
+def test_a_cznr_estimate_rejects_restricted_checks():
+    with pytest.raises(ValueError, match="uniform checks only"):
+        estimators.Estimate(
+            100, 100, 0, 0, 1, 2, restricted_checks=True, cznr=True
         )
