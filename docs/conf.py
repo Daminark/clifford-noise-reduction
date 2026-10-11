@@ -3,7 +3,7 @@
 import importlib.metadata
 
 project = "clifford-noise-reduction"
-author = "Daminark"
+author = "Amin Idelhaj"
 copyright = f"2026, {author}"
 release = importlib.metadata.version(project)
 

@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "clifford-noise-reduction"
 version = "0.1.0"
 description = "Clifford Noise Reduction (CliNR) in Stim"
+authors = [{ name = "Amin Idelhaj" }]
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
