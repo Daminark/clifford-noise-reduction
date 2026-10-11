@@ -12,6 +12,7 @@ uv sync --locked
 uv run python scripts/regret.py
 uv run python scripts/sharpness.py
 uv run python scripts/payoff.py
+uv run python scripts/dense.py
 ```
 
 | Script                 | Writes                   | Rendered by                                                  | Run at commit | Time   |
@@ -19,8 +20,9 @@ uv run python scripts/payoff.py
 | `scripts/regret.py`    | `results/regret.json`    | {doc}`../explanation/families`, {doc}`../explanation/regret` | `75d16fc`     | 73 min |
 | `scripts/sharpness.py` | `results/sharpness.json` | {doc}`../explanation/sharpness`                              | `e80d396`     | 41 min |
 | `scripts/payoff.py`    | `results/payoff.json.gz` | {doc}`../explanation/payoff`                                 | `84d7157`     | 4.3 h  |
+| `scripts/dense.py`     | `results/dense.json.gz`  | {doc}`../explanation/dense`                                  | `d05e2a4`     | 1.7 h  |
 
-The times are for one machine with 16 CPUs; `regret.py` and `payoff.py` take `--workers`, the number of processes, which defaults to the number of CPUs.
+The times are for one machine with 16 CPUs; `regret.py`, `payoff.py` and `dense.py` take `--workers`, the number of processes, which defaults to the number of CPUs.
 A script saves as it goes and resumes from its results file, so it can be stopped and started again.
 `--quick` runs a small configuration, writing a separate file, to check a script before a full run; `sharpness.py --quick` reads the quick results of `regret.py`.
 
