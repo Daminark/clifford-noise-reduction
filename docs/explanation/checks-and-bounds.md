@@ -2,8 +2,8 @@
 
 CliNR implements each chunk $C_k$ of the circuit by gate teleportation.
 It prepares the *resource state* $(I \otimes C_k)|\Phi^+\rangle^{\otimes n}$ apart from the data, measures `r` of its stabilizers, the checks, and teleports the data through it only if every check passes.
-This page explains why a check catches a fault, what the two families of checks guarantee, and how those guarantees combine into the bounds that {func}`clinr.bounds.plog_bound` and {func}`clinr.bounds.overhead_bound` compute.
-We follow the paper's Lemma 1 and Theorem 1 (Delfosse and Tham, [arXiv:2407.06583](https://arxiv.org/abs/2407.06583)) and say where our bounds part from them.
+We explain why a check catches a fault, what the two families of checks guarantee, and how those guarantees combine into the bounds that {func}`clinr.bounds.plog_bound` and {func}`clinr.bounds.overhead_bound` compute.
+We follow the paper's Lemma 1 and Theorem 1 (Delfosse and Tham, [arXiv:2407.06583](https://arxiv.org/abs/2407.06583)), and close by saying where our bounds part from them; the bounds for CZNR are treated in {doc}`cznr`.
 
 ## What a check detects
 
@@ -13,8 +13,9 @@ Measuring a check $g \in S$ flips its outcome exactly when $E$ anticommutes with
 
 For a fixed $E$, the map that sends $g$ to $0$ if $g$ commutes with $E$ and to $1$ otherwise is a homomorphism from $S$ to $\mathbb{F}_2$.
 If $E$ commutes with all of $S$, then $E$ lies in $S$ up to a phase, because $S$ is a maximal commuting group, and $E$ leaves the resource unchanged.
-Otherwise $E$ damages the resource, the homomorphism is onto, and its kernel has index 2: **exactly half of $S$ anticommutes with $E$.**
-No fault damages the state while commuting with every stabilizer.
+Otherwise $E$ damages the resource, the homomorphism is onto, and its kernel has index 2.
+Thus exactly half of $S$ anticommutes with a damaging error, and no fault damages the state while commuting with every stabilizer.
+Which elements of $S$ to measure is then a choice, and the package offers two.
 
 ## The two families of checks
 
@@ -36,6 +37,8 @@ $$q = 1 - \frac{2}{3n},$$
 and enumerating every Pauli on $2n$ qubits shows the bound is attained at $n = 1, 2, 3$.
 At $n = 1$ the family is the whole group without the identity, with a miss of $1/3$; beyond, the restricted miss approaches 1 while the uniform one stays at $1/2$.
 The paper runs its numerics with this family, while Theorem 1 covers uniform checks only.
+
+With the miss of one check in hand, we can bound the logical error rate.
 
 ## The bound on the logical error rate
 

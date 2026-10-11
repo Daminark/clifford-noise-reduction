@@ -12,8 +12,8 @@ kernelspec:
 # When CZNR pays off
 
 The paper's Fig. 7 compares CZNR with the direct implementation on dense blocks of `CZ` gates, at a budget of 2 on the gate overhead.
-We repeat it, add a budget of 4 and the Forte-like rates of {doc}`families`, and run CliNR on the same blocks, which {doc}`cznr` shows to be the worse scheme only to first order.
-We describe the experiment, compare with Fig. 7, compare CZNR with CliNR, and close with the Forte-like rates.
+We repeat it, add a budget of 4 and the Forte-like rates of {doc}`families`, and run CliNR on the same blocks, since {doc}`cznr` shows CliNR to be the worse of the two only to first order.
+We first describe the experiment, then set our results against Fig. 7 and CZNR against CliNR, and close with the Forte-like rates.
 
 ```{code-cell} python
 ---
@@ -131,9 +131,10 @@ Four schemes run on each block, every one by the paper's rule as in {doc}`payoff
 - **CliNR with restricted checks**, the family of the paper's own CliNR numerics.
 
 A chosen pair is estimated afresh over {glue:text}`draws` draws of {glue:text}`shots` shots, and the direct implementation over {glue:text}`direct_shots` shots.
-Every rate is a logical error rate per run of the circuit, and a scheme's **gain** is the direct implementation's rate over its own.
+Every rate is a logical error rate per run of the circuit, and a scheme's *gain* is the direct implementation's rate over its own.
 The 95% interval of a single estimate has a median half-width of {glue:text}`width_median:.0%` of the rate, and at most {glue:text}`width_max:.0%`; every direct estimate counts at least {glue:text}`direct_errors` logical errors.
 There is one circuit per size, so these intervals are the whole of the statistical uncertainty.
+We begin with the paper's own comparison, at a budget of 2.
 
 ## Against the paper's Fig. 7
 
@@ -194,8 +195,9 @@ At $10^{-4}$ we find much the same: CZNR fits from $n =$ {glue:text}`first_paper
 At $10^{-3}$ we do not.
 With $|+\rangle$ prepared as a reset and a Hadamard, the rule never fits a budget of 2: at $n = 20$, for instance, the overhead at $t = 1$ is {glue:text}`overhead_paper_4_cznr_20:.2f`.
 Prepared natively, as the paper counts it, CZNR fits from $n =$ {glue:text}`first_paper_2_cznr_native` to {glue:text}`last_paper_2_cznr_native`, with gains of {glue:text}`gain_paper_2_cznr_native_15:.1f`, {glue:text}`gain_paper_2_cznr_native_20:.1f` and {glue:text}`gain_paper_2_cznr_native_25:.1f`.
-Beyond, no $t$ brings the overhead within 2: the least the pilots found is {glue:text}`least_overhead_30:.2f` at $n = 30$ and {glue:text}`least_overhead_50:.2f` at $n = 50$, as acceptance falls with one chunk and the fixed cost of each chunk grows with several.
-Our overhead counts every operation of every attempt, restarts included; how the paper's counts, so that the budget of 2 holds at $n = 50$, is not stated, and we leave the difference unexplained.
+Beyond, no $t$ brings the overhead within 2: the least the pilots found is {glue:text}`least_overhead_30:.2f` at $n = 30$ and {glue:text}`least_overhead_50:.2f` at $n = 50$, since with one chunk the acceptance is low, and with several the cost that every chunk pays, whatever its size, adds up.
+Our overhead counts every operation of every attempt, restarts included; the paper does not state how it counts the overhead that keeps $n = 50$ within a budget of 2, and we leave the difference unexplained.
+A budget of 2 thus leaves CZNR little room at $10^{-3}$, so to compare the schemes we turn to a budget of 4.
 
 ## CZNR against CliNR
 
@@ -232,9 +234,9 @@ So the first-order comparison of {doc}`cznr` holds at these rates too, which rea
 
 Native preparation saves about $n$ operations per chunk, and at the same $t$ leaves the logical error rate within the noise: it matters only where the overhead is close to the budget, as at a budget of 2 above.
 
-CliNR with restricted checks is the worst of the schemes.
-Its checks are cheap, so it fits further than either uniform scheme, but its gain at a budget of 4 never exceeds {glue:text}`best_paper_4_restricted:.1f` at $p_2 = 10^{-3}$ and {glue:text}`best_paper_1e_4_4_restricted:.1f` at $10^{-4}$, against {glue:text}`best_paper_4_cznr:.1f` and {glue:text}`best_paper_1e_4_4_cznr:.1f` for CZNR.
-On a complete graph its propagated $Z$ stabilizers have weight 2 and the others weight $n + 1$, and one draw may miss a damaging fault with probability up to $1 - 2/(3n)$ ({doc}`checks-and-bounds`), against $1/2$ for a uniform check, which the rule's few checks do not make up.
+CliNR with restricted checks is the worst of the four.
+On a complete graph its propagated $ZZ$ checks have weight 2 and the others weight $n + 1$, so its checks are cheap and it fits at larger sizes than either uniform scheme.
+However, one draw may miss a damaging fault with probability up to $1 - 2/(3n)$ ({doc}`checks-and-bounds`), against $1/2$ for a uniform check, and the rule's few checks do not make up the difference: its gain at a budget of 4 never exceeds {glue:text}`best_paper_4_restricted:.1f` at $p_2 = 10^{-3}$ and {glue:text}`best_paper_1e_4_4_restricted:.1f` at $10^{-4}$, against {glue:text}`best_paper_4_cznr:.1f` and {glue:text}`best_paper_1e_4_4_cznr:.1f` for CZNR.
 
 ## At Forte-like rates
 

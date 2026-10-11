@@ -141,12 +141,12 @@ The direct implementation is estimated with {glue:text}`direct_shots` shots.
 Both families of checks are run on the same circuits.
 
 The experiment has two parts.
-The **curves** take {glue:text}`circuits` random Clifford circuits at each size from {func}`clinr.circuits.random_clifford`, as the paper does, at $n = 5, 10, 15, \dots$, in steps of 10 beyond $n = 80$, until the direct implementation's bound on the median circuit, which is nearly exact ({doc}`regret`), reaches $0.9$.
+The *curves* take {glue:text}`circuits` random Clifford circuits at each size from {func}`clinr.circuits.random_clifford`, as the paper does, at $n = 5, 10, 15, \dots$, in steps of 10 beyond $n = 80$, until the direct implementation's bound on the median circuit, which is nearly exact ({doc}`regret`), reaches $0.9$.
 This takes the sizes to $n =$ {glue:text}`largest_paper`, {glue:text}`largest_paper_1e_4` and {glue:text}`largest_forte_like` in the three regimes.
-The **maps** take {glue:text}`circuits` circuits of $s = n^\alpha$ gates drawn uniformly from $\{H, S, \mathrm{CX}\}$, as in the paper's App. D, from {func}`clinr.circuits.random_gate_sequence`, for $\alpha = 1.2, 1.3, \dots, 2.0$ and $n = 5, 10, \dots, 55$ at $p_2 = 10^{-4}$ and $n = 5, \dots, 30$ at the Forte-like rates.
+The *maps* take {glue:text}`circuits` circuits of $s = n^\alpha$ gates drawn uniformly from $\{H, S, \mathrm{CX}\}$, as in the paper's App. D, from {func}`clinr.circuits.random_gate_sequence`, for $\alpha = 1.2, 1.3, \dots, 2.0$ and $n = 5, 10, \dots, 55$ at $p_2 = 10^{-4}$ and $n = 5, \dots, 30$ at the Forte-like rates.
 
 Every rate is a logical error rate per run of the circuit.
-We report medians over the circuits of a size, and measure CliNR's **gain** on a circuit by the ratio of the direct implementation's rate to CliNR's, so a gain above 1 means CliNR pays off; the gain of a size is the median over the circuits on which the rule finds a $t$.
+We report medians over the circuits of a size, and measure CliNR's *gain* on a circuit by the ratio of the direct implementation's rate to CliNR's, so a gain above 1 means CliNR pays off; the gain of a size is the median over the circuits on which the rule finds a $t$.
 The 95% interval of a single CliNR estimate has a median half-width of {glue:text}`width_median:.0%` of the rate, and at most {glue:text}`width_max:.0%`, at the largest sizes with restricted checks, where the draws of the checks differ most.
 Every direct estimate on the curves counts at least {glue:text}`direct_errors_curves` logical errors; on the maps the smallest circuits count as few as {glue:text}`direct_errors_maps`, at rates of at most {glue:text}`few_rate:.3f`, far below the differences the maps resolve.
 
@@ -204,7 +204,7 @@ The paper reports a gain of 2 at $n = 25$ for $p_2 = 10^{-3}$, and of 4 at $n = 
 Its circuits have $s \approx n^2$ gates, while Stim's synthesis gives about $1.5 n^2$ ({doc}`sharpness`), so we compare at matched size: our $n = 20$ has a median of {glue:text}`s_20` gates against the paper's 625, and our $n = 50$ has {glue:text}`s_50` against its 3,600.
 At $n = 20$ and $p_2 = 10^{-3}$, the rule fits a budget of 2 with restricted checks, the paper's family, on {glue:text}`fits_paper_2_restricted_20` of the {glue:text}`circuits` circuits, with a gain of {glue:text}`gain_paper_2_restricted_20:.1f`.
 At $n = 50$ and $p_2 = 10^{-4}$, the gain is {glue:text}`gain_paper_1e_4_2_restricted_50:.1f` with restricted checks and {glue:text}`gain_paper_1e_4_2_uniform_50:.1f` with uniform ones, at either budget.
-The curves thus have the paper's shape, and our gains are larger than its, by factors of about 1.5 and 2.
+The curves thus have the paper's shape, and our gains are larger than the paper's, by factors of about 1.5 and 2.
 
 One plausible cause is idle noise, which the paper's numerics include at rate $p_1$ and ours omit.
 In a schedule that runs one operation at a time, the input block idles while each resource is prepared, where no check can see its faults, so idle noise reaches CliNR's output much as it reaches the direct implementation's, and the gain shrinks.
@@ -214,6 +214,8 @@ Our $n = 25$ has {glue:text}`s_25` gates, so each chunk is half as large again a
 
 The two budgets coincide wherever the smaller one is met with one chunk, since the rule fixes $r$ and takes the smallest $t$ that fits.
 The larger budget changes the choice only where the smaller one needs more chunks, and then buys fewer teleportations: at $p_2 = 10^{-4}$ and $n = 90$, restricted checks gain {glue:text}`gain_paper_1e_4_2_restricted_90:.1f` with two chunks under a budget of 2, and {glue:text}`gain_paper_1e_4_4_restricted_90:.1f` with one under a budget of 4.
+
+Matching sizes calibrates the curves at each rate; taken together, the two rates also test how far each implementation reaches as $p$ falls, which we now turn to.
 
 ## The scaling of Theorem 2
 

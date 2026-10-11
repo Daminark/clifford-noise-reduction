@@ -1,7 +1,7 @@
 # Related work
 
 Delfosse and Tham introduced CliNR in [arXiv:2407.06583](https://arxiv.org/abs/2407.06583), published in Physical Review Letters 134, 090603 (2025), the paper this package implements.
-This page places the package among the work that followed: three papers that extend the scheme, and one study on hardware.
+We place the package among the work that followed: three papers that extend the scheme, then one study on hardware, and we close with how these works realize the scheme's restarts.
 
 ## Extensions of the scheme
 
@@ -37,5 +37,5 @@ Their hardware result marks that equivalence as a property of the noise model.
 Neither hardware experiment restarts a rejected resource in real time.
 The Optimized CliNR experiment runs every circuit to completion, discards the shots whose checks fired, and infers the restart rate as the fraction discarded.
 The study of Brown and coauthors measures the checks mid-circuit but still post-selects, and names real-time feed-forward as a next step.
-Recursive CliNR's Stim simulations run complete circuits with every restart event.
+Recursive CliNR's Stim simulations, by contrast, run each circuit to completion with every restart included.
 This package post-selects, as the experiments do, and recovers the expected number of attempts from each chunk's acceptance ({doc}`estimation`).

@@ -14,7 +14,7 @@ kernelspec:
 The paper bounds CliNR with checks drawn uniformly from the stabilizer group of the resource state (Theorem 1), and runs its numerics with checks drawn from the propagated Bell stabilizers (Sec. V), the two families of {doc}`checks-and-bounds`.
 It never runs both, so which family to use is left open.
 We answer this by measurement: for each family, noise regime, budget on the gate overhead and circuit size, we find the implementation with the least measured logical error rate, and compare.
-We begin by describing the experiment, then compare the families, and close by tracing the comparison to the cost and the strength of a single check.
+We begin with the experiment, then compare the families, trace the comparison to the cost and the strength of a single check, and close with what the bounds would have chosen instead.
 
 ```{code-cell} python
 ---

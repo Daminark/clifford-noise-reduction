@@ -2,7 +2,7 @@
 
 When the circuit consists of `CZ` gates only, CliNR simplifies: the resource state becomes an $n$-qubit graph state, and the data is teleported through it by a one-bit teleportation.
 This is CZNR, the variant of the paper's App. E (Delfosse and Tham, [arXiv:2407.06583](https://arxiv.org/abs/2407.06583)), which {func}`clinr.protocol.build_cznr_tr` builds.
-This page explains why the simplification works, what a check detects, how the paper's Theorem 3 compares with its Theorem 1, and what can be said of CZNR against CliNR on the same circuit.
+We explain why the simplification works and what a check detects, then compare the paper's Theorem 3 with its Theorem 1, and close with what can be said of CZNR against CliNR on the same circuit.
 
 ## Graph states and one-bit teleportation
 
@@ -75,4 +75,4 @@ Each term of its bound is therefore the smaller, and so is its overhead bound; t
 The same holds of the logical error rate to first order in the error rates, which is the probability of a single fault that damages the output and escapes every check ({mod}`clinr.first_order`): CZNR has fewer such faults in every region, and the test suite checks its first-order rate against CliNR's on complete graphs.
 It does not follow at higher orders.
 The two circuits are not one a part of the other, two faults can cancel, and the logical error rate is conditioned on acceptance, so having fewer fault locations does not by itself make the rate lower.
-How the schemes compare at the rates where those effects matter is a question for measurement.
+How the schemes compare at the rates where those effects matter is therefore a question for measurement, which {doc}`dense` takes up.

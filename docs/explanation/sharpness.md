@@ -12,7 +12,7 @@ kernelspec:
 # How tight the bounds are
 
 {doc}`regret` found the bound on the direct implementation nearly exact, and the bound on CliNR far above the measured rate: at the pairs with checks that measurement chose, between {glue:text}`slack_low:.1f` and {glue:text}`slack_high:.1f` times.
-This page takes the CliNR bound apart to see where that slack comes from.
+We take the CliNR bound apart to see where that slack comes from.
 We first describe how each ingredient of the bound is replaced by what actually happens, then read off the slack ingredient by ingredient, look closely at the one that dominates for restricted checks, and close with the bound on the gate overhead.
 
 ```{code-cell} python
@@ -249,7 +249,7 @@ A fault early in $C$ is moved back through few gates and stays light, while a fa
 Uniform checks catch every damaging fault with probability $1/2$ wherever it occurs.
 So the worst case of the restricted family is a property of the first few layers of the chunk, and the bound charges it to every fault.
 
-The generator matters for the same reason.
+How the circuit is drawn matters for the same reason.
 At the same number of gates, a random sequence of $H$, $S$ and $CX$ spreads a fault more slowly than a random Clifford synthesized from its tableau, so its catch rises later in the chunk, and restricted checks detect less on it.
 The sizes of the experiment also vary the shape of the circuits: a synthesized random Clifford has about $1.5 n^2$ gates, so $s = n^\alpha$ with $\alpha$ from {glue:text}`alpha_3:.1f` at $n = 3$ to {glue:text}`alpha_25:.1f` at $n = 25$, and part of what varies with $n$ in these results varies with $\alpha$.
 
@@ -257,4 +257,4 @@ The sizes of the experiment also vary the shape of the circuits: a synthesized r
 
 The overhead bound has two ingredients that differ from the measured overhead: the acceptance bound, and the worst-case weight of every check.
 Replacing the acceptance bound by the measured acceptance lowers the overhead bound by a factor of up to {glue:text}`overhead_acceptance_max:.1f`, while the drawn weights lower it by only {glue:text}`overhead_weight_min:.2f` to {glue:text}`overhead_weight_max:.2f` times.
-So, as for the logical error rate, the slack of the overhead bound lies in counting every fault as a restart.
+Thus, as for the logical error rate, the slack of the overhead bound lies in counting every fault as a restart.

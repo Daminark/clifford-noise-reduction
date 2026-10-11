@@ -1,7 +1,7 @@
 # Differences from the paper
 
-This package implements the protocol of Delfosse and Tham ([arXiv:2407.06583](https://arxiv.org/abs/2407.06583)), and departs from the paper in its noise model, in the circuits it builds, in its bounds and in how it estimates.
-This page lists the departures; the page named under each table explains them.
+This package implements the protocol of Delfosse and Tham ([arXiv:2407.06583](https://arxiv.org/abs/2407.06583)), and departs from the paper in its noise model, in the circuits it builds, in its bounds, in its treatment of CZNR and in how it estimates.
+We list the departures here, and the page named under each table explains them.
 
 ## The noise model
 

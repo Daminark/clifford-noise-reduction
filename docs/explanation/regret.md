@@ -108,11 +108,13 @@ glue("best_pairs", len(outside), display=False)
 Each way of choosing picks, for a given circuit, noise regime, family of checks and budget on the gate overhead, either the direct implementation or a pair $(t, r)$.
 
 - **By the bounds**: {func}`clinr.bounds.choose_tr` takes the least bound on the logical error rate among the direct implementation and the pairs whose overhead bound is within the budget.
-- **By the paper's rule**: $r = \lfloor \log_2(s/n) \rfloor$ checks, the choice in the proof of the paper's Theorem 2, and the smallest $t$ whose overhead is within the budget, as in the paper's Fig. 2. We judge the overhead by measurement. The rule always chooses CliNR, and may find no $t$ at all.
+- **By the paper's rule**: $r = \lfloor \log_2(s/n) \rfloor$ checks, the choice in the proof of the paper's Theorem 2, and the smallest $t$ whose overhead is within the budget, as in the paper's Fig. 2.
+  We judge the overhead by measurement.
+  The rule always chooses CliNR, and may find no $t$ at all.
 - **By measurement**: the least measured logical error rate among the direct implementation and the pairs whose measured overhead is within the budget, as in {doc}`families`.
 
 Measurement is the best a user could do with full knowledge of the grid, so we measure every choice against it.
-The **regret** of a choice is the ratio of its logical error rate to that of the measured choice, both read from fresh estimates; a regret of 1 means nothing was lost.
+The *regret* of a choice is the ratio of its logical error rate to that of the measured choice, both read from fresh estimates; a regret of 1 means nothing was lost.
 We also report the difference of the two rates, the logical errors lost per run.
 
 ## How much each choice loses
@@ -160,7 +162,7 @@ plt.show()
 ```
 
 With uniform checks under the paper's rates and an overhead of 4, choosing by the bounds loses little: a regret of {glue:text}`bound_paper_4_uniform_8:.2f`, {glue:text}`bound_paper_4_uniform_15:.2f` and {glue:text}`bound_paper_4_uniform_25:.2f` at $n = 8$, $15$ and $25$, or {glue:text}`bound_difference_paper_4_uniform_25:.3f` in logical error rate at $n = 25$.
-This is the regime the bounds were made for, and there they do as well as the paper's rule or better, which loses {glue:text}`rule_paper_4_uniform_8:.2f`, {glue:text}`rule_paper_4_uniform_15:.2f` and {glue:text}`rule_paper_4_uniform_25:.2f`.
+This is the regime the bounds were made for, and there they do as well as the paper's rule or better: the rule loses {glue:text}`rule_paper_4_uniform_8:.2f`, {glue:text}`rule_paper_4_uniform_15:.2f` and {glue:text}`rule_paper_4_uniform_25:.2f`.
 
 With restricted checks the bounds recommend the direct implementation throughout, as {doc}`families` found, and the regret is that of not using CliNR at all.
 Under the paper's rates and an overhead of 4 it reaches {glue:text}`bound_paper_4_restricted_25:.2f` at $n = 25$, a difference of {glue:text}`bound_difference_paper_4_restricted_25:.2f` in logical error rate.
@@ -171,7 +173,7 @@ At an overhead of 2 the picture is mixed.
 Under the paper's rates, the bounds still find a pair with uniform checks at $n = 8$ and $15$, but fall back to the direct implementation at $n = 25$, with a regret of {glue:text}`bound_paper_2_uniform_25:.2f`; the paper's rule never fits this budget with uniform checks, since with its $r$ checks no $t$ brings the overhead within it.
 Under the Forte-like rates there is almost nothing to lose, because no pair does more than marginally better than the direct implementation.
 
-The paper's rule has the opposite failing at the smallest size.
+The paper's rule fails in the opposite way at the smallest size.
 At $n = 3$ under the Forte-like rates the direct implementation is the best choice, and the bounds choose it on every circuit, while the rule, which always chooses CliNR, loses {glue:text}`rule_forte_like_4_uniform_3:.2f` with uniform checks at an overhead of 4.
 
 ## Where the regret comes from

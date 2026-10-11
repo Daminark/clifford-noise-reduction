@@ -12,8 +12,8 @@ kernelspec:
 # Estimation
 
 {mod}`clinr.estimators` turns sampled shots into the protocol's logical error rate and gate overhead, with intervals.
-This page explains what each estimator estimates, and why its interval covers what it claims to.
-It builds on the argument of {doc}`the-scheme` that the shots in which every check passes have the protocol's output distribution.
+We explain what each estimator estimates and why its interval covers what it claims to, building on the argument of {doc}`the-scheme` that the shots in which every check passes have the protocol's output distribution.
+We begin with one draw of the checks, then turn to many draws and their intervals, and close with the design effect, which measures how much the draws differ.
 
 ```{code-cell} python
 ---
@@ -64,9 +64,11 @@ Chunk $k$ restarts on its own checks only, so its expected number of attempts is
 
 $$\omega = \frac{1}{s} \sum_k \left(4n + \frac{m_k}{a_k}\right),$$
 
-with each chunk's operations per attempt $m_k$ counted at the check weights drawn, and each $a_k$ measured.
+with each chunk's operations per attempt $m_k$ counted at the check weights drawn, and each $a_k$ measured; for CZNR the teleportation is $2n$ in place of $4n$.
 Every attempt measures all its checks ({doc}`../adr/0001-run-every-check-before-deciding`), so $m_k$ is exact, and the acceptance is the only estimated quantity.
 By Jensen's inequality, the reciprocal of an estimated acceptance over $N$ shots is biased upward, by a relative $(1 - a_k)/(N a_k)$ to first order: $5 \times 10^{-8}$ at $a_k = 0.99$ and $N = 2 \times 10^5$.
+
+The estimate of one draw is honest, but one draw is not the protocol, which draws its checks anew.
 
 ## Many draws
 

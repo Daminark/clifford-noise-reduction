@@ -11,8 +11,8 @@ kernelspec:
 
 # How the circuits are built
 
-{func}`clinr.protocol.build_clinr_tr` and {func}`clinr.protocol.build_direct` return the Stim circuits that the estimators sample.
-This page explains what those circuits contain beyond the scheme of {doc}`the-scheme`: the harness that reads out whether a circuit implemented $C$, the registers, the Pauli frame that tracks the corrections, and the noise model.
+{func}`clinr.protocol.build_clinr_tr` and {func}`clinr.protocol.build_direct` return the Stim circuits that the estimators sample, and {func}`clinr.protocol.build_cznr_tr` their counterpart for CZNR ({doc}`cznr`).
+We explain what those circuits contain beyond the scheme of {doc}`the-scheme`, in four parts: the harness that reads out whether a circuit implemented $C$, the registers, the Pauli frame that tracks the corrections, and the noise model.
 
 ````{code-cell} python
 ---
@@ -103,7 +103,7 @@ $$\langle\langle A|B\rangle\rangle = 2^{-n} \operatorname{Tr}(A^\dagger B).$$
 
 Since the map is injective, two unitaries prepare the same state up to a phase exactly when they are equal up to a phase.
 So a circuit applies $C$ exactly when it takes $|\Phi^+\rangle^{\otimes n}$ to the *Choi state* of $C$, $|\psi_C\rangle = (I \otimes C)|\Phi^+\rangle^{\otimes n}$, which is the state the resource of {doc}`the-scheme` is in, with the reference as its bare half.
-One input settles every input.
+Thus one input settles every input.
 
 ### Reading it out with stabilizers
 
@@ -136,7 +136,8 @@ The logical error rate is one minus the entanglement fidelity; for the Pauli mix
 
 The reference block and the Bell pairs that join it to the input are noiseless.
 They are apparatus for measuring the logical error rate, not part of the scheme, and noise in them would be charged to the circuit under test.
-Both builders use the same harness, so CliNR and the direct implementation are measured the same way.
+All the builders use the same harness, so every scheme and the direct implementation are measured the same way.
+With the readout in place, we turn to how the circuit lays out its qubits.
 
 ## The registers
 
@@ -173,7 +174,7 @@ show(clinr, "Timeline diagram of CliNR(1, 1): Choi pairs, the resource on q2 to 
 ```
 
 Both open with the Choi pairs on `q6` and `q7` and close with the four `MPP`s of the readout.
-In the second, each observable also includes some of the Bell outcomes: that is the Pauli frame.
+In the second, each observable also includes some of the Bell outcomes; these make up the Pauli frame, the subject of the next section.
 
 ## The Pauli frame
 
@@ -295,4 +296,4 @@ A schedule of equal-duration steps is furthest off for the checks, which are $r$
 The paper's Sec. V charges idle qubits at $p_1$ without stating its schedule.
 The package leaves idle noise out, and {doc}`the-scheme` explains why sampling restarts by post-selection relies on that.
 
-The builders accept any single- or two-qubit unitary gate and count fault locations for the circuit as given; decomposing into a hardware's native gates is the caller's.
+The builders accept any single- or two-qubit unitary gate and count fault locations for the circuit as given, leaving its decomposition into a hardware's native gates to the caller.

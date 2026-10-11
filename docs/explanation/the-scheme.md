@@ -12,7 +12,8 @@ kernelspec:
 # The scheme
 
 Clifford Noise Reduction (CliNR) lowers the logical error rate of a Clifford circuit by applying it through gate teleportation, with the resource state checked before the data touches it.
-This page describes the scheme of Delfosse and Tham ([arXiv:2407.06583](https://arxiv.org/abs/2407.06583)): where it sits among the ways of handling noise, how gate teleportation carries a Clifford circuit, what one attempt at a chunk does, and why the package can sample the scheme with post-selection in place of restarts.
+We describe the scheme of Delfosse and Tham ([arXiv:2407.06583](https://arxiv.org/abs/2407.06583)) in the order it is built.
+We first place it among the ways of handling noise, then describe how gate teleportation carries a Clifford circuit and what one attempt at a chunk does, and close with why the package can sample the scheme with post-selection in place of restarts.
 What the checks catch, and the bounds that follow, are the subject of {doc}`checks-and-bounds`.
 
 ```{code-cell} python
@@ -139,11 +140,13 @@ Quantum error mitigation needs few or no extra qubits, and instead post-processe
 Coherent Pauli checks measure a few parity checks across the circuit and discard the run when one fires.
 More checks catch more faults, but every discarded run is a restart from scratch, and the sampling overhead grows exponentially with the number of checks.
 
-CliNR is a teleported version of coherent Pauli checks.
-Its checks act on a resource state prepared apart from the data, so a check that fires discards only the resource, which is prepared again while the data waits; no run is discarded.
+CliNR avoids restarting from scratch by moving the checks off the data: it is a teleported version of coherent Pauli checks (the paper's Sec. I).
+Its checks act on a resource state prepared apart from the data, so a check that fires discards only the resource, which is prepared again while the data waits, and no run is discarded.
 The scheme is not fault-tolerant, since faults during the teleportation reach the data unchecked, but it is cheap: $3n + 1$ qubits for an $n$-qubit circuit.
 For a circuit of $s$ gates at physical error rate $p$, the direct implementation has a vanishing logical error rate when $sp \to 0$.
 The paper's Theorem 2 gives CliNR one when $snp^2 \to 0$, using on average $2s + o(s)$ gates, so CliNR reaches circuits with $ns = o(1/p^2)$, where the direct implementation needs $s = o(1/p)$.
+
+The scheme rests on gate teleportation, so we begin with teleportation itself.
 
 ## Teleportation
 
@@ -161,7 +164,7 @@ show(teleport, "Timeline diagram of teleporting q0 onto q2 through a Bell pair o
 
 ## Gate teleportation
 
-Gate teleportation applies a circuit $C$ to the state while teleporting it.
+Gate teleportation applies a circuit $C$ to the state in the course of teleporting it.
 Take $n$ Bell pairs, call one qubit of each pair its *bare* half and the other its *image* half, and apply $C$ to the image halves.
 The result is the *resource state* $(I \otimes C)|\Phi^+\rangle^{\otimes n}$.
 Teleporting $n$ data qubits through it, by a Bell measurement of each data qubit with its bare partner, leaves the image half in
@@ -173,8 +176,8 @@ What remains is to undo $Q = C P C^\dagger$.
 When $C$ is a Clifford circuit, $Q$ is again a Pauli, so it is computed from the outcomes in classical software and undone by at most $n$ single-qubit Pauli gates.
 When $C$ is not, $Q$ is generally not a Pauli, and undoing it takes a longer sequence of noisy gates; this is why the scheme is for Clifford circuits.
 
-All of $C$ goes into the resource before the data arrives.
-The resource can therefore be checked, and if need be thrown away, without disturbing the data.
+Notice that all of $C$ goes into the resource before the data arrives.
+The resource can therefore be checked, and if need be thrown away, without disturbing the data, which is what CliNR exploits.
 
 The circuit below gate-teleports $C$ = `H 0`, `CX 0 1` at $n = 2$, with the data on `q0` and `q1`, the bare half on `q2` and `q3`, and the image half on `q4` and `q5`.
 The first gates prepare the resource and the middle ones are the Bell measurements.
@@ -187,8 +190,8 @@ tags: [remove-input]
 show(gate_teleport(), "Timeline diagram of gate-teleporting H 0, CX 0 1 from q0 and q1 onto q4 and q5")
 ```
 
-The package never applies the correction.
-It tracks $Q$ as a Pauli frame and folds it into the readout ({doc}`../adr/0002-deliver-the-output-up-to-a-pauli-frame`).
+The package never applies the correction: it tracks $Q$ as a Pauli frame and folds it into the readout ({doc}`../adr/0002-deliver-the-output-up-to-a-pauli-frame`).
+We now insert the checks.
 
 ## One attempt at a chunk
 
@@ -225,6 +228,7 @@ show(
 
 The paper ends an attempt at the first check that fires.
 The package measures all $r$ before deciding, which accepts the same attempts ({doc}`../adr/0001-run-every-check-before-deciding`).
+One chunk suffices for a short circuit, but in a long one most attempts hold a fault and the expected number of attempts grows quickly, which leads us to split the circuit.
 
 ## Many chunks
 
@@ -254,7 +258,7 @@ The kept shots have the output distribution of the protocol, for three reasons.
 - In the protocol, the attempt that is used is the first to pass.
   Attempts are independent and identically distributed, so its faults are distributed as those of one attempt conditioned on passing, which is what the kept shots sample.
 
-What post-selection drops is the number of attempts.
+What post-selection loses is the number of attempts.
 At chunk $k$ it is geometric with mean $1/a_k$, where $a_k$ is the probability that an attempt passes; the fraction of shots in which that chunk's detectors pass estimates $a_k$, and {func}`clinr.estimators.gate_overhead` turns it into a cost.
 
 Two assumptions carry this argument.
