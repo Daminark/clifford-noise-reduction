@@ -1,4 +1,4 @@
-"""Construction of the CliNR circuits and the direct baseline.
+"""Construction of the CliNR and CZNR circuits and the direct baseline.
 
 :func:`build_clinr_tr` builds ``CliNR_{t,r}(C)`` of [1]_, Sec. III: ``C`` is
 split into ``t`` chunks, and each chunk is applied by gate teleportation
@@ -139,7 +139,10 @@ def _prep_plus_noisy(
     *,
     native_plus: bool,
 ) -> None:
-    """Prepare ``targets`` in ``|+>``: ``RX`` if ``native_plus``, else R, H."""
+    """Prepare ``targets`` in ``|+>``.
+
+    By ``RX`` if ``native_plus``, else by ``R`` then ``H``.
+    """
     if native_plus:
         circ.append("RX", targets)
         if noise.p_prep > 0:
@@ -365,9 +368,9 @@ def chunk_circuit(circuit: stim.Circuit, n: int, t: int) -> list[stim.Circuit]:
     """Split ``circuit`` into ``t`` contiguous chunks.
 
     The gates of :func:`gate_list` are cut in order into ``t`` pieces, the
-    first ``s mod t`` of size ``ceil(s/t)`` and the rest one smaller, as in
-    arXiv:2407.06583, Sec. III. When ``t`` exceeds the gate count ``s`` the
-    surplus chunks are empty.
+    first ``s mod t`` of size ``ceil(s/t)`` and the rest of size
+    ``floor(s/t)``, as in arXiv:2407.06583, Sec. III. When ``t`` exceeds the
+    gate count ``s`` the surplus chunks are empty.
 
     Parameters
     ----------
@@ -432,7 +435,7 @@ def _embed(
 def _check_same_number_of_checks(
     checks: list[list[stim.PauliString]],
 ) -> None:
-    """Raise ``ValueError`` unless every chunk has as many checks."""
+    """Raise ``ValueError`` unless the chunks have equal numbers of checks."""
     if len({len(chunk_checks) for chunk_checks in checks}) > 1:
         raise ValueError(
             "every chunk needs the same number of checks, got "
@@ -724,18 +727,18 @@ def build_cznr_tr(
     noisy_checks: bool = True,
     native_plus: bool = False,
 ) -> stim.Circuit:
-    """Build ``CZNR_{t,r}(C)`` of arXiv:2407.06583, App. E, with the harness.
+    """Build ``CZNR_{t,r}(C)`` with the Choi harness.
 
-    ``C`` must consist of ``CZ`` gates. Each chunk ``C_k`` is applied by
-    one-bit teleportation through its graph state: ``n`` resource qubits
-    are prepared in ``|+>`` and the chunk's gates applied to them; the
-    checks are measured; then each data qubit ``i`` takes a ``CX`` from
-    resource qubit ``i`` and is measured, which leaves the chunk's output
-    on the resource qubits up to the Pauli
+    This is the variant of arXiv:2407.06583, App. E. ``C`` must consist of
+    ``CZ`` gates. Each chunk ``C_k`` is applied by one-bit teleportation
+    through its graph state: ``n`` resource qubits are prepared in ``|+>`` and
+    the chunk's gates applied to them; the checks are measured; then each data
+    qubit ``i`` takes a ``CX`` from resource qubit ``i`` and is measured, which
+    leaves the chunk's output on the resource qubits up to the Pauli
     ``U_{G_k} X_i U_{G_k}^dag`` for each nontrivial outcome. As in
-    :func:`build_clinr_tr`, that correction is tracked as a Pauli frame
-    and folded into the observables, all ``r`` checks of an attempt are
-    measured, and the Choi harness is noiseless.
+    :func:`build_clinr_tr`, that correction is tracked as a Pauli frame and
+    folded into the observables, all ``r`` checks of an attempt are measured,
+    and the Choi harness is noiseless.
 
     Register layout, ``3n + 1`` qubits: the first chunk's data on
     ``[0, n)``, its resource on ``[n, 2n)``, the Choi reference on

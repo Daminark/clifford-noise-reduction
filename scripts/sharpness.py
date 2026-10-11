@@ -157,7 +157,7 @@ def run_waterfall_point(
 def positions(
     built: stim.Circuit, bins: int
 ) -> tuple[list[float], list[float]]:
-    """Return the damaging and caught probability of one draw, by position.
+    """Return the damaging and caught probabilities of one draw, by position.
 
     Position 0 is the preparation of the resource; positions 1 to ``bins``
     divide the noise locations of the chunk's gates into equal parts, in
@@ -221,7 +221,7 @@ STAGES = ("bound", "damaging", "detection", "acceptance", "measured")
 def waterfall(
     data: dict[str, Any], results: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Return the bound at each stage of its replacement by what happens.
+    """Return the bound at each stage, as its ingredients are replaced in turn.
 
     Parameters
     ----------

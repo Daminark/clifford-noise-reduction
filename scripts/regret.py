@@ -17,10 +17,10 @@ Run from the repository root::
 
 The results go to ``results/regret.json`` with the settings, the seed, the
 versions and platform that produced them, the circuits, and the counts of
-every draw. The run saves after every point and resumes from the file, so
-it can be stopped and started again. ``--quick`` runs a small grid to
-check the script, writing ``results/regret-quick.json`` unless ``--output``
-says otherwise.
+every draw. The run saves as it goes, at most once a minute, and resumes
+from the file, so it can be stopped and started again. ``--quick`` runs a
+small grid to check the script, writing ``results/regret-quick.json``
+unless ``--output`` says otherwise.
 """
 
 from __future__ import annotations
@@ -282,9 +282,10 @@ def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
     list of dict
         One record per case and ceiling, with keys ``regime``, ``n``,
         ``circuit``, ``family`` and ``ceiling``; ``direct``, the rate of the
-        direct implementation; and, for each choice, its pick and its rate:
+        direct implementation; and, for each choice ``name`` among
         ``best`` (the measured choice), ``best_pair`` (the best pair by
-        measurement), ``bound``, ``rule`` and ``rule_by_bound``. A pick is
+        measurement), ``bound``, ``rule`` and ``rule_by_bound``, its pick
+        under ``name_pick`` and its rate under ``name``. A pick is
         ``[t, r]``, ``"direct"``, or ``None`` when there is none, in which
         case its rate is ``nan``.
     """

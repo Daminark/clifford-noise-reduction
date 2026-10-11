@@ -186,7 +186,7 @@ def test_drawn_checks_miss_a_worst_case_fault_at_the_closed_form_rate(
     At 30000 draws, 5 sigma on the single-draw rate is about 0.014, well
     inside the gap of 0.033 between 1/2 and the 7/15 a sampler that redrew
     the identity would give.
-    The triple rate q**3, at about 0.015 for 5 sigma, checks independence:
+    The triple rate q**3, at 0.017 to 0.023 for 5 sigma, checks independence:
     a sampler that reused draws would miss triples at a rate nearer q**2.
     """
     n, draws = 2, 30000

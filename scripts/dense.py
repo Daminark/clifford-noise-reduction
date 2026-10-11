@@ -402,7 +402,7 @@ def run(config: Config, path: Path, workers: int) -> None:
 
 
 def outcomes(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the outcome of every size, arm and budget.
+    """Return the outcome of every regime, size, arm and budget.
 
     Parameters
     ----------

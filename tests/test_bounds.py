@@ -44,7 +44,8 @@ def paper_overhead(n: int, s: int, t: int, r: int, p: float) -> float:
 # Against the paper
 # ---------------------------------------------------------------------------
 # The paper's conventions: one rate, a native |+> preparation, and uniform
-# checks; the Pauli correction the paper charges is resolved for free here.
+# checks; the Pauli correction the paper charges is tracked as a Pauli frame
+# here, at no cost.
 THEOREM_1 = {
     "n": st.integers(1, 5),
     "size": st.integers(1, 150),

@@ -107,9 +107,9 @@ def add(*regions: Region) -> Region:
 def prep_region(n: int, native_plus: bool) -> Region:
     """Return the region of one resource preparation of ``n`` Bell pairs.
 
-    ``2n`` preparations and ``n`` ``CX`` either way, plus ``n`` Hadamards
-    unless ``native_plus``, when ``|+>`` is one ``RX`` rather than ``R``
-    then ``H``.
+    The region has ``2n`` preparations and ``n`` ``CX`` either way, plus
+    ``n`` Hadamards unless ``native_plus`` is true, in which case ``|+>``
+    is one ``RX`` rather than ``R`` then ``H``.
 
     Parameters
     ----------
@@ -136,7 +136,7 @@ def check_region(count: int, weight: int, native_plus: bool) -> Region:
     A weight-``w`` check is one preparation, two Hadamards (one under
     ``native_plus``), ``w`` controlled Paulis and one measurement: ``w + 4``
     operations, or ``w + 3``. The count is the same whether or not the
-    checks are noisy; noiseless checks only have no fault locations.
+    checks are noisy; noiseless checks merely have no fault locations.
 
     Parameters
     ----------
@@ -260,7 +260,7 @@ class Scheme(NamedTuple):
 def clinr_scheme(n: int, native_plus: bool) -> Scheme:
     """Return CliNR's regions on ``n`` data qubits.
 
-    :func:`prep_region` and :func:`teleport_region`.
+    The regions are those of :func:`prep_region` and :func:`teleport_region`.
 
     Parameters
     ----------
@@ -278,7 +278,8 @@ def clinr_scheme(n: int, native_plus: bool) -> Scheme:
 def cznr_scheme(n: int, native_plus: bool) -> Scheme:
     """Return CZNR's regions on ``n`` data qubits.
 
-    :func:`cznr_prep_region` and :func:`cznr_teleport_region`.
+    The regions are those of :func:`cznr_prep_region` and
+    :func:`cznr_teleport_region`.
 
     Parameters
     ----------
@@ -299,7 +300,8 @@ def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
     Parameters
     ----------
     prep : Region
-        The resource preparation, from :func:`prep_region`.
+        The resource preparation, from :func:`prep_region` or
+        :func:`cznr_prep_region`.
     s1 : int
         Single-qubit gates in the chunk. Must be non-negative.
     s2 : int

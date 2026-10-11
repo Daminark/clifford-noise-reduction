@@ -149,7 +149,10 @@ class ChunkTerms(NamedTuple):
 
 
 def _check_sizes(n: int, r: int, name: str = "r") -> None:
-    """Raise ``ValueError`` unless ``n >= 1`` and ``r >= 0``, naming ``r``."""
+    """Raise ``ValueError`` unless ``n >= 1`` and ``r >= 0``.
+
+    The message calls ``r`` by ``name``.
+    """
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if r < 0:

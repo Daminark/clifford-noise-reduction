@@ -28,7 +28,7 @@ def one_instruction(name: str) -> stim.Circuit:
 
     Stim's gates differ in the targets and arguments they accept, so this
     tries the common shapes in turn. It fails loudly for a gate none of them
-    fits, which is what a new stim gate should do to this suite.
+    fits, which is what a new Stim gate should do to this suite.
     """
     shapes = [
         "{} 0",

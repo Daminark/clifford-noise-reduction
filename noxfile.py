@@ -68,8 +68,8 @@ def tests_full(session: nox.Session) -> None:
 def docs(session: nox.Session) -> None:
     """Build the documentation site, failing on any warning.
 
-    Notebooks run as part of the build. The site is written to
-    docs/_build/html.
+    Notebooks whose code has changed run as part of the build. The site is
+    written to ``docs/_build/html``.
     """
     session.run(
         "uv",

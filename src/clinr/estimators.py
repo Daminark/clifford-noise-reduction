@@ -77,7 +77,8 @@ def wilson_interval(
     Parameters
     ----------
     errors : int
-        Number of successes. Must be between 0 and ``trials``.
+        Number of errors, the events whose proportion is estimated. Must
+        be between 0 and ``trials``.
     trials : int
         Number of independent trials. Must be non-negative.
     confidence : float, optional
@@ -115,6 +116,9 @@ def wilson_interval(
 class Estimate:
     """Counts from one Monte Carlo run on one circuit.
 
+    The four per-chunk tuples have one length: the number of chunks, or
+    zero for the direct implementation. All counts are non-negative.
+
     Parameters
     ----------
     shots : int
@@ -149,9 +153,6 @@ class Estimate:
     cznr : bool, optional
         True for an estimate of CZNR (:func:`estimate_cznr`), whose checks
         are drawn uniformly, so ``restricted_checks`` is then False.
-
-    The four per-chunk tuples have one length: the number of chunks, or
-    zero for the direct implementation. All counts are non-negative.
 
     Raises
     ------
@@ -642,8 +643,9 @@ def _half_width(deviations: list[float], confidence: float) -> float:
     """Return the Student t half-width from per-draw deviations.
 
     Each deviation is a draw's first-order contribution to the point
-    estimate; they sum to zero, and their mean square over ``J (J - 1)``
-    estimates its variance. Requires at least two draws.
+    estimate; they sum to zero, and the sum of their squares over
+    ``J (J - 1)``, for ``J`` draws, estimates its variance. Requires at
+    least two draws.
     """
     draws = len(deviations)
     assert draws >= 2, "a half-width needs at least two draws"
@@ -672,7 +674,7 @@ def logical_error_rate(
     The interval is the two-sided Student t interval with one degree of
     freedom fewer than the number of draws, its variance estimated over the
     draws by the delta method, so it counts the spread between draws as
-    well as shot noise; clamped to [0, 1].
+    well as shot noise. Its bounds are clamped to [0, 1].
 
     Parameters
     ----------
@@ -693,10 +695,10 @@ def logical_error_rate(
     Raises
     ------
     ValueError
-        If ``estimates`` is empty or disagree in gate counts, checks per
-        chunk, ``n`` or options; if they accepted too few shots, as above;
-        if ``confidence`` is not strictly between 0 and 1; or if ``checks``
-        is neither ``"fresh"`` nor ``"kept"``.
+        If ``estimates`` is empty or its entries disagree in gate counts,
+        checks per chunk, ``n`` or options; if they accepted too few
+        shots, as above; if ``confidence`` is not strictly between 0 and 1;
+        or if ``checks`` is neither ``"fresh"`` nor ``"kept"``.
     """
     _comparable(estimates)
     _check_confidence(confidence)
@@ -729,8 +731,8 @@ def design_effect(estimates: list[Estimate]) -> float:
     The within-draw variance of a draw is the binomial ``p (1 - p) / a`` at
     its rate ``p`` and accepted count ``a``. A value near 1 means the draws
     vary no more than independent shots would, so a Wilson interval on the
-    pooled shots is honest; above 1, clustered intervals are wider by its
-    square root.
+    pooled shots is honest; above 1, an interval over draws is wider than
+    the pooled one by about the square root of the value.
 
     Parameters
     ----------
@@ -745,10 +747,9 @@ def design_effect(estimates: list[Estimate]) -> float:
     Raises
     ------
     ValueError
-        On the conditions of :func:`logical_error_rate` with
-        ``checks="kept"`` on ``estimates``, if
-        fewer than two are given, or if every draw's rate is 0 or 1, which
-        makes the within-draw variance zero.
+        If ``estimates`` fails the conditions of :func:`logical_error_rate`
+        with ``checks="kept"``, if fewer than two are given, or if every
+        draw's rate is 0 or 1, which makes the within-draw variance zero.
 
     Notes
     -----
@@ -862,10 +863,10 @@ def gate_overhead_over_draws(
     Parameters
     ----------
     estimates : list of Estimate
-        Draws as in :func:`logical_error_rate`, of CliNR rather than the
-        direct implementation. With ``checks="kept"`` every chunk of each
-        must have accepted a shot; with ``"fresh"``, every chunk of at
-        least one.
+        Draws as in :func:`logical_error_rate`, of CliNR or CZNR rather
+        than the direct implementation. With ``checks="kept"`` every chunk
+        of each must have accepted a shot; with ``"fresh"``, every chunk of
+        at least one.
     confidence : float, optional
         Confidence level, strictly between 0 and 1.
     checks : {"fresh", "kept"}, optional

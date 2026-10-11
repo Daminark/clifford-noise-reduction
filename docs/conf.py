@@ -19,8 +19,8 @@ exclude_patterns = ["_build"]
 html_theme = "furo"
 html_title = "CliNR"
 
-# Notebooks run on every build, and any cell error fails it; the cache
-# skips notebooks whose code has not changed since the last run.
+# Notebooks run when their code has changed since the last build, and any
+# cell error fails the build.
 nb_execution_mode = "cache"
 nb_execution_raise_on_error = True
 nb_execution_show_tb = True  # print the failing cell's traceback in the log

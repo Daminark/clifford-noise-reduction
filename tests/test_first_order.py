@@ -45,7 +45,8 @@ def components(
 
     The circuit applies the fault with certainty, in place of the
     instruction, as noise: Stim reports detector and observable flips
-    relative to a noiseless reference sample, which a gate would join.
+    relative to a noiseless reference sample, and a fault applied as a gate
+    would become part of that reference.
     """
     targets = [target.value for target in instruction.targets_copy()]
     rate = instruction.gate_args_copy()[0]

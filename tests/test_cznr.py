@@ -380,9 +380,10 @@ def test_cznr_bounds_never_exceed_clinr_ones_on_the_same_circuit(
 ):
     """At the same t and r, CZNR does less in every region.
 
-    Its preparation, checks and teleportation each have fewer operations
-    of every kind than CliNR's, with the same miss of 1/2 per uniform
-    check, so each term of its bound is the smaller.
+    Its preparation, checks and teleportation each have no more
+    operations of any kind than CliNR's, and fewer overall, with the same
+    miss of 1/2 per uniform check, so each term of its bound is the
+    smaller.
     """
     circuit = cz_circuit(n, size, seed)
     options = {"noisy_checks": noisy_checks, "native_plus": native_plus}

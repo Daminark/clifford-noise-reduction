@@ -153,7 +153,7 @@ QUICK = Config(
 def rule_r(size: int, n: int) -> int:
     """Return the paper's number of checks, ``floor(log2(size / n))``.
 
-    At least 1, since the paper takes ``r >= 1``.
+    The result is at least 1, since the paper takes ``r >= 1``.
     """
     return max(regret.paper_r(size, n), 1)
 
