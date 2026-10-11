@@ -10,11 +10,11 @@ accept the same shots.
 :func:`build_direct` builds the baseline, ``C`` applied directly, and
 :func:`build_cznr_tr` builds ``CZNR_{t,r}(C)``, the variant of [1]_, App. E,
 for circuits of ``CZ`` gates, with ``n`` resource qubits per chunk.
-Both carry a Choi harness that reads out whether the implemented channel is
-``C``, and both are exact at zero noise: every detector and observable is
-deterministic.
+All three carry a Choi harness that reads out whether the implemented
+channel is ``C``, and all three are exact at zero noise: every detector and
+observable is deterministic.
 
-Register layout, ``4n + 1`` qubits::
+Register layout of :func:`build_clinr_tr`, ``4n + 1`` qubits::
 
     b1  [0,   n)     data input of the first chunk
     b2  [n,  2n)     resource half the data is teleported against
@@ -24,7 +24,10 @@ Register layout, ``4n + 1`` qubits::
 
 After each chunk, ``b1`` and ``b3`` exchange roles by relabeling, with no
 gates, so the output ends on ``b3`` when ``t`` is odd and on ``b1`` when
-``t`` is even.
+``t`` is even. :func:`build_cznr_tr` has ``3n + 1`` qubits: the data
+``[0, n)``, the graph state ``[n, 2n)``, the reference ``[2n, 3n)`` and the
+ancilla ``3n``, with the data and graph-state blocks exchanging roles after
+each chunk.
 
 Noise follows a :class:`clinr.noise_models.NoiseModel`: ``DEPOLARIZE1`` at
 ``p1`` after single-qubit gates, ``DEPOLARIZE2`` at ``p2`` after two-qubit
@@ -64,6 +67,7 @@ __all__ = [
     "chunk_circuit",
     "build_clinr_tr",
     "build_direct",
+    "require_cz_only",
     "graph_state_gens",
     "build_cznr_tr",
 ]
@@ -425,6 +429,54 @@ def _embed(
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
+def _check_same_number_of_checks(
+    checks: list[list[stim.PauliString]],
+) -> None:
+    """Raise ``ValueError`` unless every chunk has as many checks."""
+    if len({len(chunk_checks) for chunk_checks in checks}) > 1:
+        raise ValueError(
+            "every chunk needs the same number of checks, got "
+            f"{[len(chunk_checks) for chunk_checks in checks]}"
+        )
+
+
+def _choi_input(out: stim.Circuit, ref: list[int], data: list[int]) -> None:
+    """Pair each reference qubit with the first chunk's input, noiselessly."""
+    for reference, qubit in zip(ref, data, strict=True):
+        out.append("H", [reference])
+        out.append("CX", [reference, qubit])
+
+
+def _choi_observables(
+    out: stim.Circuit,
+    full_tableau: stim.Tableau,
+    ref: list[int],
+    output: list[int],
+    total: int,
+    frame: dict[int, stim.PauliString],
+) -> None:
+    """Append the Choi observables, with the Pauli frame folded in.
+
+    One observable per stabilizer generator of the Choi state of the full
+    circuit on ``ref`` and ``output``: all ``2n`` are preserved exactly when
+    the implemented channel is ``C``. ``frame`` maps the index of each
+    measurement whose outcome applies a Pauli to the output, in logical
+    indexing, to that Pauli; the measurement enters every observable whose
+    output part the Pauli anticommutes with.
+    """
+    for observable, gen in enumerate(
+        stabilizer_gens(full_tableau, ref, output, total)
+    ):
+        out.append("MPP", _pauli_to_mpp_targets(gen))
+        # The generator's output-block part, in logical indexing.
+        conj = stim.PauliString([gen[qubit] for qubit in output])
+        records = [stim.target_rec(-1)]
+        for index, pauli in frame.items():
+            if not pauli.commutes(conj):
+                records.append(stim.target_rec(index - out.num_measurements))
+        out.append("OBSERVABLE_INCLUDE", records, observable)
+
+
 def build_direct(
     circuit: stim.Circuit,
     n: int,
@@ -464,21 +516,13 @@ def build_direct(
     total = 4 * n + 1
     out = stim.Circuit()
 
-    for i in range(n):
-        out.append("H", [ref[i]])
-        out.append("CX", [ref[i], b1[i]])
-
+    _choi_input(out, ref, b1)
     for name, targets in gate_list(circuit):
         _apply_noisy(
             out, name, [b1[qubit] for qubit in targets], noise, "gates/0"
         )
 
-    for observable, gen in enumerate(
-        stabilizer_gens(full_tableau, ref, b1, total)
-    ):
-        out.append("MPP", _pauli_to_mpp_targets(gen))
-        out.append("OBSERVABLE_INCLUDE", [stim.target_rec(-1)], observable)
-
+    _choi_observables(out, full_tableau, ref, b1, total, {})
     return out
 
 
@@ -540,11 +584,7 @@ def build_clinr_tr(
         not have length ``2n`` or does not stabilize its chunk's resource
         state.
     """
-    if len({len(chunk_checks) for chunk_checks in checks}) > 1:
-        raise ValueError(
-            "every chunk needs the same number of checks, got "
-            f"{[len(chunk_checks) for chunk_checks in checks]}"
-        )
+    _check_same_number_of_checks(checks)
     full_tableau = _pad_to_width(circuit, n).to_tableau()
     chunks = chunk_circuit(circuit, n, len(checks))
     b1, b2, b3, ref, anc = _blocks(n)
@@ -552,10 +592,7 @@ def build_clinr_tr(
     out = stim.Circuit()
     frame: dict[int, stim.PauliString] = {}
 
-    # Choi input: pair each reference qubit with the first chunk's input.
-    for i in range(n):
-        out.append("H", [ref[i]])
-        out.append("CX", [ref[i], b1[i]])
+    _choi_input(out, ref, b1)
 
     data_in = b1  # the block the current chunk reads its input from
     for k, (chunk, chunk_checks) in enumerate(
@@ -619,28 +656,25 @@ def build_clinr_tr(
         # input register becomes the next resource's second half.
         data_in, b3 = b3, data_in
 
-    # Choi observables against the full circuit's tableau: all 2n preserved
-    # exactly when the implemented channel is C.
-    for observable, gen in enumerate(
-        stabilizer_gens(full_tableau, ref, data_in, total)
-    ):
-        out.append("MPP", _pauli_to_mpp_targets(gen))
-        # The generator's output-block part, in logical indexing.
-        conj = stim.PauliString([gen[qubit] for qubit in data_in])
-        records = [stim.target_rec(-1)]
-        for index, pauli in frame.items():
-            if not pauli.commutes(conj):
-                records.append(stim.target_rec(index - out.num_measurements))
-        out.append("OBSERVABLE_INCLUDE", records, observable)
-
+    _choi_observables(out, full_tableau, ref, data_in, total, frame)
     return out
 
 
 # ---------------------------------------------------------------------------
 # CZNR: noise reduction for circuits of CZ gates
 # ---------------------------------------------------------------------------
-def _check_cz_only(circuit: stim.Circuit) -> None:
-    """Raise ``ValueError`` unless every gate of ``circuit`` is a ``CZ``."""
+def require_cz_only(circuit: stim.Circuit) -> None:
+    """Raise unless every gate of ``circuit`` is a ``CZ``, as CZNR requires.
+
+    Parameters
+    ----------
+    circuit : stim.Circuit
+
+    Raises
+    ------
+    ValueError
+        If ``circuit`` has a gate other than ``CZ``, naming the others.
+    """
     others = sorted({name for name, _ in gate_list(circuit)} - {"CZ"})
     if others:
         raise ValueError(f"CZNR applies to CZ gates only, got {others}")
@@ -744,12 +778,8 @@ def build_cznr_tr(
         or if a check does not have length ``n`` or does not stabilize its
         chunk's graph state.
     """
-    if len({len(chunk_checks) for chunk_checks in checks}) > 1:
-        raise ValueError(
-            "every chunk needs the same number of checks, got "
-            f"{[len(chunk_checks) for chunk_checks in checks]}"
-        )
-    _check_cz_only(circuit)
+    _check_same_number_of_checks(checks)
+    require_cz_only(circuit)
     full_tableau = _pad_to_width(circuit, n).to_tableau()
     chunks = chunk_circuit(circuit, n, len(checks))
     data = list(range(n))
@@ -760,10 +790,7 @@ def build_cznr_tr(
     out = stim.Circuit()
     frame: dict[int, stim.PauliString] = {}
 
-    # Choi input: pair each reference qubit with the first chunk's input.
-    for i in range(n):
-        out.append("H", [ref[i]])
-        out.append("CX", [ref[i], data[i]])
+    _choi_input(out, ref, data)
 
     for k, (chunk, chunk_checks) in enumerate(
         zip(chunks, checks, strict=True)
@@ -817,16 +844,5 @@ def build_cznr_tr(
         # chunk's resource.
         data, resource = resource, data
 
-    # Choi observables against the full circuit's tableau.
-    for observable, gen in enumerate(
-        stabilizer_gens(full_tableau, ref, data, total)
-    ):
-        out.append("MPP", _pauli_to_mpp_targets(gen))
-        conj = stim.PauliString([gen[qubit] for qubit in data])
-        records = [stim.target_rec(-1)]
-        for index, pauli in frame.items():
-            if not pauli.commutes(conj):
-                records.append(stim.target_rec(index - out.num_measurements))
-        out.append("OBSERVABLE_INCLUDE", records, observable)
-
+    _choi_observables(out, full_tableau, ref, data, total, frame)
     return out

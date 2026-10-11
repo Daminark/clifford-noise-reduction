@@ -237,8 +237,8 @@ The builder reads the output part of each Choi generator back into logical index
 ---
 tags: [remove-input]
 ---
-excerpt(protocol.build_clinr_tr, """\
-        conj = stim.PauliString([gen[qubit] for qubit in data_in])
+excerpt(protocol._choi_observables, """\
+        conj = stim.PauliString([gen[qubit] for qubit in output])
         records = [stim.target_rec(-1)]
         for index, pauli in frame.items():
             if not pauli.commutes(conj):

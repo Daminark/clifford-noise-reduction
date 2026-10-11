@@ -181,7 +181,7 @@ def draw_cznr_checks(
         )
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
-    protocol._check_cz_only(circuit)
+    protocol.require_cz_only(circuit)
     checks = []
     for chunk in protocol.chunk_circuit(circuit, n, t):
         gens = protocol.graph_state_gens(chunk.to_tableau())

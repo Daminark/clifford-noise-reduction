@@ -12,7 +12,8 @@ They differ from Theorem 1 mostly in what they count:
 - the exact size of each chunk, where the paper charges every chunk the
   largest;
 - ``4n`` operations to finish a teleportation, where the paper's ``5n``
-  includes applying the Pauli correction, which is tracked here instead;
+  includes applying the Pauli correction, which is tracked here instead
+  (``2n`` for CZNR, where the paper has ``3n``);
 - the probability that ``r`` checks all miss a damaging fault, and the sum
   over gadgets of the probability that a fault arising in one escapes every
   later check, for whichever family :func:`clinr.checks.draw_checks` draws
@@ -607,7 +608,7 @@ def cznr_plog_bound(
         If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
     """
     _check_sizes(n, r)
-    protocol._check_cz_only(circuit)
+    protocol.require_cz_only(circuit)
     chunks = protocol.chunk_circuit(circuit, n, t)
     return _plog_from_counts(
         [accounting.gate_counts(chunk) for chunk in chunks],
@@ -655,7 +656,7 @@ def cznr_overhead_bound(
         If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
     """
     _check_sizes(n, r)
-    protocol._check_cz_only(circuit)
+    protocol.require_cz_only(circuit)
     chunks = protocol.chunk_circuit(circuit, n, t)
     return _overhead_from_counts(
         [accounting.gate_counts(chunk) for chunk in chunks],
