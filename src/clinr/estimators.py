@@ -790,19 +790,11 @@ def _check_overhead_input(estimate: Estimate) -> None:
         )
 
 
-def _scheme_regions(
-    estimate: Estimate,
-) -> tuple[accounting.Region, accounting.Region]:
-    """Return the resource preparation and teleportation of the scheme."""
+def _scheme(estimate: Estimate) -> accounting.Scheme:
+    """Return the scheme ``estimate`` was made with."""
     if estimate.cznr:
-        return (
-            accounting.cznr_prep_region(estimate.n, estimate.native_plus),
-            accounting.cznr_teleport_region(estimate.n),
-        )
-    return (
-        accounting.prep_region(estimate.n, estimate.native_plus),
-        accounting.teleport_region(estimate.n),
-    )
+        return accounting.cznr_scheme(estimate.n, estimate.native_plus)
+    return accounting.clinr_scheme(estimate.n, estimate.native_plus)
 
 
 def _check_regions(estimate: Estimate) -> list[accounting.Region]:
@@ -841,14 +833,11 @@ def gate_overhead(estimate: Estimate) -> float:
         If ``estimate`` has no chunks or a chunk accepted no shots.
     """
     _check_overhead_input(estimate)
-    prep, teleport = _scheme_regions(estimate)
     return accounting.expected_overhead(
         list(estimate.chunk_counts),
-        estimate.n,
-        prep,
+        _scheme(estimate),
         _check_regions(estimate),
         [accepted / estimate.shots for accepted in estimate.chunk_accepted],
-        teleport=teleport,
     )
 
 
@@ -905,11 +894,11 @@ def gate_overhead_over_draws(
         deviations = [overhead - point for overhead in overheads]
     else:
         first = estimates[0]
-        prep, teleport = _scheme_regions(first)
+        scheme = _scheme(first)
         # Each draw's operations per attempt and acceptance, chunk by chunk.
         operations = [
             [
-                sum(accounting.protected_region(prep, s1, s2, region))
+                sum(accounting.protected_region(scheme.prep, s1, s2, region))
                 for (s1, s2), region in zip(
                     estimate.chunk_counts,
                     _check_regions(estimate),
@@ -938,11 +927,9 @@ def gate_overhead_over_draws(
             sum(
                 accounting.expected_overhead(
                     list(estimate.chunk_counts),
-                    estimate.n,
-                    prep,
+                    scheme,
                     _check_regions(estimate),
                     mean_acc,
-                    teleport=teleport,
                 )
                 for estimate in estimates
             )

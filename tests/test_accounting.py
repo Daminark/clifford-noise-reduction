@@ -186,8 +186,7 @@ def test_overhead_with_certain_acceptance_counts_the_built_operations(
 
     overhead = accounting.expected_overhead(
         counts,
-        n,
-        accounting.prep_region(n, native_plus),
+        accounting.clinr_scheme(n, native_plus),
         check_regions(drawn, native_plus),
         [1.0] * t,
     )
@@ -205,8 +204,10 @@ def test_expected_overhead_on_a_hand_worked_chunk():
     """
     overhead = accounting.expected_overhead(
         [(2, 1)],
-        1,
-        accounting.Region(n1=1, n2=1, nm=0, n_prep=2),
+        accounting.Scheme(
+            accounting.Region(n1=1, n2=1, nm=0, n_prep=2),
+            accounting.teleport_region(1),
+        ),
         [accounting.Region(n1=2, n2=2, nm=1, n_prep=1)],
         [0.5],
     )
@@ -214,13 +215,13 @@ def test_expected_overhead_on_a_hand_worked_chunk():
     assert overhead == pytest.approx(10.0)
 
 
+# A scheme with no operations of its own, for the cases that need none.
+EMPTY = accounting.Scheme(accounting.ZERO, accounting.ZERO)
+
+
 def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
     overhead = accounting.expected_overhead(
-        [(2, 1), (1, 0)],
-        1,
-        accounting.ZERO,
-        [accounting.ZERO] * 2,
-        [0.9, 0.0],
+        [(2, 1), (1, 0)], EMPTY, [accounting.ZERO] * 2, [0.9, 0.0]
     )
 
     assert overhead == math.inf
@@ -228,28 +229,20 @@ def test_expected_overhead_is_infinite_when_a_chunk_never_accepts():
 
 def test_expected_overhead_rejects_chunks_without_gates():
     with pytest.raises(ValueError, match="at least one gate"):
-        accounting.expected_overhead(
-            [(0, 0)], 1, accounting.ZERO, [accounting.ZERO], [1.0]
-        )
+        accounting.expected_overhead([(0, 0)], EMPTY, [accounting.ZERO], [1.0])
 
 
 def test_expected_overhead_rejects_per_chunk_sequences_of_unequal_length():
     with pytest.raises(ValueError, match="one entry per chunk"):
         accounting.expected_overhead(
-            [(2, 1), (1, 0)],
-            1,
-            accounting.ZERO,
-            [accounting.ZERO],
-            [1.0, 1.0],
+            [(2, 1), (1, 0)], EMPTY, [accounting.ZERO], [1.0, 1.0]
         )
 
 
 @pytest.mark.parametrize("q", [-0.1, 1.1, math.nan])
 def test_expected_overhead_rejects_an_acceptance_outside_the_unit_interval(q):
     with pytest.raises(ValueError, match=r"must lie in \[0, 1\]"):
-        accounting.expected_overhead(
-            [(2, 1)], 1, accounting.ZERO, [accounting.ZERO], [q]
-        )
+        accounting.expected_overhead([(2, 1)], EMPTY, [accounting.ZERO], [q])
 
 
 @pytest.mark.parametrize(

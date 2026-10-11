@@ -8,7 +8,8 @@ numbers for the same circuit.
 Per chunk the protocol of [1]_ has four regions: the resource preparation,
 the chunk's own gates, its checks, and the teleportation after the last
 check. CZNR, its variant for circuits of ``CZ`` gates ([1]_, App. E), has
-the same four, with a smaller preparation and teleportation.
+the same four, with a smaller preparation and teleportation. A
+:class:`Scheme` holds the two that differ.
 
 References
 ----------
@@ -60,6 +61,9 @@ __all__ = [
     "teleport_region",
     "cznr_prep_region",
     "cznr_teleport_region",
+    "Scheme",
+    "clinr_scheme",
+    "cznr_scheme",
     "protected_region",
     "expected_overhead",
 ]
@@ -238,6 +242,57 @@ def cznr_teleport_region(n: int) -> Region:
     return Region(n1=0, n2=n, nm=n, n_prep=0)
 
 
+class Scheme(NamedTuple):
+    """The regions a scheme adds around each chunk: CliNR's or CZNR's.
+
+    Parameters
+    ----------
+    prep : Region
+        The resource preparation, the same for every chunk.
+    teleport : Region
+        The teleportation after a chunk's last check.
+    """
+
+    prep: Region
+    teleport: Region
+
+
+def clinr_scheme(n: int, native_plus: bool) -> Scheme:
+    """Return CliNR's regions on ``n`` data qubits.
+
+    :func:`prep_region` and :func:`teleport_region`.
+
+    Parameters
+    ----------
+    n : int
+        Number of data qubits. Must be at least 1.
+    native_plus : bool
+
+    Returns
+    -------
+    Scheme
+    """
+    return Scheme(prep_region(n, native_plus), teleport_region(n))
+
+
+def cznr_scheme(n: int, native_plus: bool) -> Scheme:
+    """Return CZNR's regions on ``n`` data qubits.
+
+    :func:`cznr_prep_region` and :func:`cznr_teleport_region`.
+
+    Parameters
+    ----------
+    n : int
+        Number of data qubits. Must be at least 1.
+    native_plus : bool
+
+    Returns
+    -------
+    Scheme
+    """
+    return Scheme(cznr_prep_region(n, native_plus), cznr_teleport_region(n))
+
+
 def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
     """Return the region of one attempt at a chunk, through its last check.
 
@@ -270,12 +325,9 @@ def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
 
 def expected_overhead(
     counts: list[tuple[int, int]],
-    n: int,
-    prep: Region,
+    scheme: Scheme,
     check_regions: list[Region],
     acceptance: list[float],
-    *,
-    teleport: Region | None = None,
 ) -> float:
     """Return the expected number of operations per gate of the circuit.
 
@@ -283,27 +335,23 @@ def expected_overhead(
     ``m_k`` operations of its :func:`protected_region`, and the number of
     attempts is geometric with mean ``1 / q_k``. Each chunk also pays its
     teleportation once. This is Eq. (B4) of arXiv:2407.06583 with the
-    acceptance ``q_k`` in place of ``1 - p_res`` and the teleportation's
-    ``4n`` in place of ``5n``. The total is divided by the number of gates
-    across the chunks.
+    acceptance ``q_k`` in place of ``1 - p_res`` and the scheme's
+    teleportation, ``4n`` for CliNR, in place of ``5n``. The total is
+    divided by the number of gates across the chunks.
 
     Parameters
     ----------
     counts : list of tuple of (int, int)
         ``(s1, s2)`` for each chunk, in chunk order, not all zero.
-    n : int
-        Number of data qubits. Must be at least 1.
-    prep : Region
-        The resource preparation, the same for every chunk.
+    scheme : Scheme
+        The preparation and teleportation of every chunk, from
+        :func:`clinr_scheme` or :func:`cznr_scheme`.
     check_regions : list of Region
         Each chunk's checks, in chunk order.
     acceptance : list of float
         Each chunk's acceptance probability ``q_k``, in chunk order, in
         [0, 1]. Analytic bounds and measured frequencies are both accepted;
         the result is a bound or an estimate accordingly.
-    teleport : Region, optional
-        The teleportation each chunk pays once: :func:`teleport_region` by
-        default, :func:`cznr_teleport_region` for CZNR.
 
     Returns
     -------
@@ -331,12 +379,14 @@ def expected_overhead(
         raise ValueError(
             f"acceptance probabilities must lie in [0, 1], got {acceptance}"
         )
-    tail = sum(teleport_region(n) if teleport is None else teleport)
+    tail = sum(scheme.teleport)
     expected = 0.0
     for (s1, s2), checks, q in zip(
         counts, check_regions, acceptance, strict=True
     ):
         if q == 0.0:
             return math.inf
-        expected += tail + sum(protected_region(prep, s1, s2, checks)) / q
+        expected += (
+            tail + sum(protected_region(scheme.prep, s1, s2, checks)) / q
+        )
     return expected / size

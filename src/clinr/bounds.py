@@ -147,32 +147,6 @@ class ChunkTerms(NamedTuple):
         return numerator / self.acceptance
 
 
-class _Scheme(NamedTuple):
-    """The regions a scheme adds around each chunk: CliNR or CZNR."""
-
-    n: int
-    prep: Region
-    teleport: Region
-
-
-def _clinr(n: int, native_plus: bool) -> _Scheme:
-    """Return CliNR's scheme on ``n`` data qubits."""
-    return _Scheme(
-        n,
-        accounting.prep_region(n, native_plus),
-        accounting.teleport_region(n),
-    )
-
-
-def _cznr(n: int, native_plus: bool) -> _Scheme:
-    """Return CZNR's scheme on ``n`` data qubits."""
-    return _Scheme(
-        n,
-        accounting.cznr_prep_region(n, native_plus),
-        accounting.cznr_teleport_region(n),
-    )
-
-
 def _check_sizes(n: int, r: int, name: str = "r") -> None:
     """Raise ``ValueError`` unless ``n >= 1`` and ``r >= 0``, naming ``r``."""
     if n < 1:
@@ -204,7 +178,7 @@ def _faulty(checks: Region, noisy_checks: bool) -> Region:
 
 def _chunk_plog_bound(
     noise: NoiseModel,
-    scheme: _Scheme,
+    scheme: accounting.Scheme,
     s1: int,
     s2: int,
     family: _Family,
@@ -231,7 +205,7 @@ def _chunk_plog_bound(
 
 def _chunk_terms(
     noise: NoiseModel,
-    scheme: _Scheme,
+    scheme: accounting.Scheme,
     s1: int,
     s2: int,
     family: _Family,
@@ -264,7 +238,7 @@ def _chunk_terms(
 def _plog_from_counts(
     counts: list[tuple[int, int]],
     noise: NoiseModel,
-    scheme: _Scheme,
+    scheme: accounting.Scheme,
     families: list[_Family],
     noisy_checks: bool,
     native_plus: bool,
@@ -281,7 +255,7 @@ def _plog_from_counts(
 def _overhead_from_counts(
     counts: list[tuple[int, int]],
     noise: NoiseModel,
-    scheme: _Scheme,
+    scheme: accounting.Scheme,
     families: list[_Family],
     noisy_checks: bool,
     native_plus: bool,
@@ -301,14 +275,7 @@ def _overhead_from_counts(
             scheme.prep, s1, s2, _faulty(checks, noisy_checks)
         )
         no_fault.append(1.0 if r == 0 else _no_fault_prob(noise, protected))
-    return accounting.expected_overhead(
-        counts,
-        scheme.n,
-        scheme.prep,
-        regions,
-        no_fault,
-        teleport=scheme.teleport,
-    )
+    return accounting.expected_overhead(counts, scheme, regions, no_fault)
 
 
 def plog_bound(
@@ -374,7 +341,7 @@ def plog_bound(
     return _plog_from_counts(
         counts,
         noise,
-        _clinr(n, native_plus),
+        accounting.clinr_scheme(n, native_plus),
         [family] * t,
         noisy_checks,
         native_plus,
@@ -447,7 +414,7 @@ def plog_terms(
     return [
         _chunk_terms(
             noise,
-            _clinr(n, native_plus),
+            accounting.clinr_scheme(n, native_plus),
             *accounting.gate_counts(chunk),
             family,
             noisy_checks,
@@ -504,7 +471,7 @@ def overhead_bound(
     return _overhead_from_counts(
         counts,
         noise,
-        _clinr(n, native_plus),
+        accounting.clinr_scheme(n, native_plus),
         [family] * t,
         noisy_checks,
         native_plus,
@@ -588,7 +555,7 @@ def choose_tr(
         for r, family in enumerate(families):
             options = (
                 noise,
-                _clinr(n, native_plus),
+                accounting.clinr_scheme(n, native_plus),
                 [family] * t,
                 noisy_checks,
                 native_plus,
@@ -645,7 +612,7 @@ def cznr_plog_bound(
     return _plog_from_counts(
         [accounting.gate_counts(chunk) for chunk in chunks],
         noise,
-        _cznr(n, native_plus),
+        accounting.cznr_scheme(n, native_plus),
         [_Family(r, 0.5, n)] * len(chunks),
         noisy_checks,
         native_plus,
@@ -693,7 +660,7 @@ def cznr_overhead_bound(
     return _overhead_from_counts(
         [accounting.gate_counts(chunk) for chunk in chunks],
         noise,
-        _cznr(n, native_plus),
+        accounting.cznr_scheme(n, native_plus),
         [_Family(r, 0.5, n)] * len(chunks),
         noisy_checks,
         native_plus,

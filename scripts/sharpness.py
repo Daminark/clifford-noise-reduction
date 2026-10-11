@@ -352,8 +352,7 @@ def waterfall(
                     ),
                     "acceptance": accounting.expected_overhead(
                         counts,
-                        n,
-                        prep,
+                        accounting.clinr_scheme(n, native_plus=False),
                         [accounting.check_region(r, r * worst, False)] * t,
                         [float(value) for value in acceptance],
                     ),

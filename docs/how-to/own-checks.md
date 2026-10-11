@@ -113,7 +113,7 @@ The first-order values are exact for these checks, and differ from the sampled o
 
 ## Price the overhead
 
-{func}`clinr.accounting.expected_overhead` takes each chunk's gate counts, check region and acceptance.
+{func}`clinr.accounting.expected_overhead` takes each chunk's gate counts, the scheme's preparation and teleportation, and each chunk's check region and acceptance.
 The detectors come in chunk order, `r` per chunk, so each chunk's acceptance is the fraction of shots in which none of its own fires:
 
 ```{code-cell} python
@@ -123,8 +123,7 @@ per_chunk = detectors.reshape(len(detectors), t, r)
 acceptance = [float(rate) for rate in (~per_chunk.any(axis=2)).mean(axis=0)]
 overhead = accounting.expected_overhead(
     [accounting.gate_counts(chunk) for chunk in chunks],
-    n,
-    accounting.prep_region(n, native_plus=False),
+    accounting.clinr_scheme(n, native_plus=False),
     [
         accounting.check_region(
             r, sum(check.weight for check in chunk_checks), native_plus=False
