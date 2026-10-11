@@ -40,6 +40,18 @@ Explained in {doc}`circuits`, except where a row names another page.
 
 Explained in {doc}`checks-and-bounds`.
 
+## CZNR
+
+|                        | Paper (App. E)                                                | This package                                                     |
+| ---------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Family of checks       | uniform over the graph state's stabilizer group               | the same; the restricted family is CliNR's only                  |
+| Teleportation          | $3n$ operations, with $n$ Pauli gates applying the correction | $2n$, the correction tracked as a Pauli frame                    |
+| Qubits                 | $2n + 1$                                                      | $3n + 1$ in simulation, the extra $n$ a noiseless Choi reference |
+| Statement of Theorem 3 | $g_p(n + s)$ in the resource term, and both $m$ and $m_0$     | read as $g_p(n + s_0)$ and $m_0$, as in Theorem 1                |
+
+The bounds depart from Theorem 3 as those for CliNR depart from Theorem 1.
+Explained in {doc}`cznr`.
+
 ## Estimation
 
 |                     | Paper                                                                                                | This package                                                                                                  |
