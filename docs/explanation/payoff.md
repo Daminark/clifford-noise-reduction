@@ -366,13 +366,15 @@ glue("map_best", float(np.nanmax([maps["paper-1e-4", 4.0, family] for family in 
 glue("map_direct_max", max(row["direct"] for row in rows if (row["part"], row["regime"]) == ("maps", "paper-1e-4")), display=False)
 fits_two = np.concatenate([~np.isnan(maps["paper-1e-4", 2.0, family]) for family in families])
 glue("two_lowest", alphas[int(np.nonzero(fits_two.any(axis=0))[0][0])], display=False)
-glue("two_restricted_worst", float(np.nanmin(maps["paper-1e-4", 2.0, "restricted"])), display=False)
+# A loss, as a positive difference.
+glue("two_restricted_worst", float(-np.nanmin(maps["paper-1e-4", 2.0, "restricted"])), display=False)
 
 forte = {family: maps["forte-like", 4.0, family] for family in families}
 glue("forte_cells", int(sum((~np.isnan(grid)).sum() for grid in forte.values())), display=False)
 glue("forte_positive", int(sum((grid > 0).sum() for grid in forte.values())), display=False)
 glue("forte_best", float(np.nanmax(forte["restricted"])), display=False)
-glue("forte_worst", float(np.nanmin(forte["restricted"])), display=False)
+# The largest loss, as a positive difference, over both families.
+glue("forte_worst", float(-min(np.nanmin(grid) for grid in forte.values())), display=False)
 ```
 
 ```{code-cell} python

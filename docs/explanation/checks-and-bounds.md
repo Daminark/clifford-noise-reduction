@@ -93,4 +93,4 @@ Ours differ from them as follows, and {doc}`differences` collects these with the
 Under the paper's own conventions (one rate, `native_plus=True`, uniform checks), our bounds never exceed Theorem 1's, which the test suite checks over random circuits and parameters.
 
 Theorem 1 takes at most $s$ chunks, since any beyond the $s$-th would be empty.
-This implementation allows more ({doc}`../adr/0003-allow-more-chunks-than-gates`), and our overhead bound charges each empty chunk its teleportation.
+This implementation allows more ({doc}`../adr/0003-allow-more-chunks-than-gates`), and our overhead bound charges each empty chunk its preparation, checks and teleportation.

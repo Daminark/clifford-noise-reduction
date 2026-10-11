@@ -121,7 +121,7 @@ Precision and bias therefore both come from the number of draws, not the shots p
 {func}`clinr.estimators.design_effect` divides the variance between the draws' rates by the mean variance within them, $p_j (1 - p_j) / A_j$ for a draw with rate $p_j$ over $A_j$ accepted shots.
 Near 1, the draws differ no more than independent shots would, and a Wilson interval on the pooled shots of every draw would be honest.
 Above 1, the pooled interval is too narrow, by about the square root of the design effect.
-A draw that saw no errors adds nothing to the variance within draws, so the ratio is biased upward when errors are rare.
+When errors are rare, few draws see any, and the ratio is noisy.
 
 The effect depends on the setting, so it is measured rather than assumed.
 At $n = 3$, with 30 random gates, $t = 2$, $r = 4$ and {func}`clinr.noise_models.uniform_noise` at $2 \times 10^{-3}$, 40 uniform draws of $2 \times 10^4$ shots give a design effect of {glue:text}`uniform_effect:.1f`, and an interval over draws {glue:text}`uniform_widening:.1f` times as wide as the pooled Wilson interval.

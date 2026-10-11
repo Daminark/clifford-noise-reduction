@@ -17,13 +17,13 @@ Explained in {doc}`circuits`.
 
 ## The circuits
 
-|                | Paper                                                                   | This package                                                                                                                              |
-| -------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Correction $Q$ | $n$ Pauli gates after every chunk, so $5n$ operations per teleportation | tracked as a Pauli frame, so $4n$ operations per teleportation ({doc}`ADR 2 <../adr/0002-deliver-the-output-up-to-a-pauli-frame>`)        |
-| Failed checks  | the attempt restarts at the first check that fails                      | all $r$ checks are measured before deciding, which accepts the same attempts ({doc}`ADR 1 <../adr/0001-run-every-check-before-deciding>`) |
-| Chunks         | at most $s$ in Theorem 1                                                | any $t \ge 1$, each empty chunk paying its teleportation ({doc}`ADR 3 <../adr/0003-allow-more-chunks-than-gates>`)                        |
-| Restarts       | a rejected resource is prepared again                                   | one attempt per chunk, with post-selection on every check passing, which gives the same output distribution ({doc}`the-scheme`)           |
-| Qubits         | $3n + 1$                                                                | $4n + 1$ in simulation, the extra $n$ a noiseless Choi reference that reads out the channel                                               |
+|                | Paper                                                                   | This package                                                                                                                               |
+| -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Correction $Q$ | $n$ Pauli gates after every chunk, so $5n$ operations per teleportation | tracked as a Pauli frame, so $4n$ operations per teleportation ({doc}`ADR 2 <../adr/0002-deliver-the-output-up-to-a-pauli-frame>`)         |
+| Failed checks  | the attempt restarts at the first check that fails                      | all $r$ checks are measured before deciding, which accepts the same attempts ({doc}`ADR 1 <../adr/0001-run-every-check-before-deciding>`)  |
+| Chunks         | at most $s$ in Theorem 1                                                | any $t \ge 1$, each empty chunk paying its preparation, checks and teleportation ({doc}`ADR 3 <../adr/0003-allow-more-chunks-than-gates>`) |
+| Restarts       | a rejected resource is prepared again                                   | one attempt per chunk, with post-selection on every check passing, which gives the same output distribution ({doc}`the-scheme`)            |
+| Qubits         | $3n + 1$                                                                | $4n + 1$ in simulation, the extra $n$ a noiseless Choi reference that reads out the channel                                                |
 
 Explained in {doc}`circuits`, except where a row names another page.
 

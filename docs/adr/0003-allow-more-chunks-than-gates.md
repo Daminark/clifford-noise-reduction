@@ -7,12 +7,12 @@ Accepted.
 ## Context
 
 Theorem 1 of arXiv:2407.06583 splits a circuit of `s` gates into `t` chunks.
-When `t` exceeds `s`, some chunks are empty, and each of them still pays a full teleportation.
+When `t` exceeds `s`, some chunks are empty, and each of them still pays a resource preparation, its checks and a teleportation.
 The proof of the theorem's overhead bound uses `t ceil(s/t) <= 2s`, which fails for `t > 2s`, so the formula does not cover that range; its bound on the logical error rate holds for every `t`.
 
 ## Decision
 
-`protocol.chunk_circuit` accepts any `t >= 1` and returns empty chunks when `t > s`, and the bounds price each empty chunk's teleportation.
+`protocol.chunk_circuit` accepts any `t >= 1` and returns empty chunks when `t > s`, and the bounds price each empty chunk's preparation, checks and teleportation.
 No warning is raised: the configuration is valid and correctly priced, and `bounds.choose_tr` never selects it by default.
 
 ## Consequences
