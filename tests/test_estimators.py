@@ -10,9 +10,20 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy import stats
 
-from clinr import bounds, circuits, estimators, noise_models
+from clinr import (
+    bounds,
+    checks,
+    circuits,
+    estimators,
+    first_order,
+    noise_models,
+    protocol,
+)
 
 NOISELESS = noise_models.uniform_noise(0.0)
+# Low enough that two faults in one shot are rare, so the estimates agree with
+# the first-order values to about 2% relative.
+LOW_NOISE = noise_models.NoiseModel(p1=2e-4, p2=2e-3, p_m=1e-3, p_prep=4e-4)
 
 
 def seeded_circuit(n: int, size: int, seed: int) -> stim.Circuit:
@@ -292,19 +303,51 @@ def test_direct_sweep_rejects_an_empty_list_of_circuits():
         estimators.sweep_direct([], 2, NOISELESS, 10, np.random.default_rng(0))
 
 
-def test_sweeps_estimate_each_circuit_in_turn():
-    batch = [seeded_circuit(2, 5, seed) for seed in range(3)]
+def test_sweeps_estimate_each_circuit_in_turn_with_the_options_given():
+    """Circuits of different sizes, so the order of the results shows."""
+    batch = [seeded_circuit(2, size, size) for size in (3, 5, 8)]
+    options = {
+        "noisy_checks": False,
+        "restricted_checks": True,
+        "native_plus": True,
+    }
 
     clinr = estimators.sweep_clinr(
-        batch, 2, 1, 1, NOISELESS, 10, np.random.default_rng(0)
+        batch, 2, 1, 1, NOISELESS, 10, np.random.default_rng(0), **options
     )
     direct = estimators.sweep_direct(
         batch, 2, NOISELESS, 10, np.random.default_rng(0)
     )
 
-    assert [estimate.size for estimate in clinr] == [5, 5, 5]
+    assert [estimate.size for estimate in clinr] == [3, 5, 8]
+    assert [estimate.size for estimate in direct] == [3, 5, 8]
+    assert all(
+        (e.noisy_checks, e.restricted_checks, e.native_plus)
+        == (False, True, True)
+        for e in clinr
+    )
     assert [estimate.chunk_checks for estimate in clinr] == [(1,)] * 3
     assert [estimate.errors for estimate in direct] == [0, 0, 0]
+
+
+def test_cznr_estimate_passes_noiseless_checks_to_the_builder():
+    """Noiseless checks at full noise elsewhere: a check cannot misfire."""
+    circuit = stim.Circuit("CZ 0 1")
+    noise = noise_models.NoiseModel(p1=0.0, p2=0.0, p_m=0.5, p_prep=0.0)
+
+    estimate = estimators.estimate_cznr(
+        circuit,
+        2,
+        1,
+        2,
+        noise,
+        200,
+        np.random.default_rng(0),
+        noisy_checks=False,
+    )
+
+    assert estimate.noisy_checks is False
+    assert estimate.chunk_accepted == (200,)
 
 
 def test_estimate_interval_is_the_wilson_interval_of_its_counts():
@@ -651,3 +694,88 @@ def test_statistics_over_draws_reject_an_unknown_checks_option(statistic):
 def test_design_effect_rejects_a_draw_that_accepted_nothing():
     with pytest.raises(ValueError, match="accepted no shots"):
         estimators.design_effect([draw(1, 900), draw(0, 0)])
+
+
+def assert_close_to_first_order(measured: float, expected: float, count: int):
+    """Assert ``measured`` agrees with ``expected``, on both sides.
+
+    The allowance is 5 binomial standard errors over ``count`` trials, plus
+    5% of ``expected`` for the effect of several faults in one shot.
+    """
+    standard_error = math.sqrt(expected * (1 - expected) / count)
+    assert abs(measured - expected) <= 5 * standard_error + 0.05 * expected
+
+
+def test_direct_estimate_counts_the_errors_first_order_predicts():
+    """An oracle on both sides: a rate of zero, or of every shot, fails."""
+    n = 3
+    circuit = seeded_circuit(n, 20, seed=1)
+    estimate = estimators.estimate_direct(
+        circuit, n, LOW_NOISE, 100_000, np.random.default_rng(5)
+    )
+    built = protocol.build_direct(circuit, n, LOW_NOISE)
+    expected = first_order.logical_error_rate(first_order.faults(built))
+    assert_close_to_first_order(estimate.p_log, expected, estimate.accepted)
+
+
+@pytest.mark.parametrize("restricted_checks", [False, True])
+def test_clinr_estimate_counts_the_errors_first_order_predicts(
+    restricted_checks,
+):
+    """The same generator, seeded alike, redraws the estimate's checks."""
+    n, t, r = 3, 2, 3
+    circuit = seeded_circuit(n, 20, seed=1)
+    options = {"restricted_checks": restricted_checks}
+    estimate = estimators.estimate_clinr(
+        circuit,
+        n,
+        t,
+        r,
+        LOW_NOISE,
+        100_000,
+        np.random.default_rng(5),
+        **options,
+    )
+    drawn = checks.draw_checks(
+        circuit, n, t, r, np.random.default_rng(5), **options
+    )
+    built = protocol.build_clinr_tr(circuit, n, drawn, LOW_NOISE)
+    expected = first_order.logical_error_rate(first_order.faults(built))
+    assert_close_to_first_order(estimate.p_log, expected, estimate.accepted)
+
+
+def test_cznr_estimate_counts_the_errors_first_order_predicts():
+    n, t, r = 4, 2, 2
+    circuit = stim.Circuit("CZ 0 1 1 2 0 2 0 1 2 3 1 3")
+    estimate = estimators.estimate_cznr(
+        circuit, n, t, r, LOW_NOISE, 100_000, np.random.default_rng(5)
+    )
+    drawn = checks.draw_cznr_checks(circuit, n, t, r, np.random.default_rng(5))
+    built = protocol.build_cznr_tr(circuit, n, drawn, LOW_NOISE)
+    expected = first_order.logical_error_rate(first_order.faults(built))
+    assert_close_to_first_order(estimate.p_log, expected, estimate.accepted)
+
+
+def test_each_chunk_rejects_the_shots_its_own_faults_predict():
+    """Chunk 0 holds 30 noisy CX and chunk 1 30 quieter S, so they differ.
+
+    A chunk's detectors see only the faults of its own resource and checks,
+    whose regions are tagged with its index.
+    """
+    n, t, r, shots = 2, 2, 2, 100_000
+    circuit = stim.Circuit("CX 0 1\n" * 30 + "S 0\n" * 30)
+    estimate = estimators.estimate_clinr(
+        circuit, n, t, r, LOW_NOISE, shots, np.random.default_rng(9)
+    )
+    drawn = checks.draw_checks(circuit, n, t, r, np.random.default_rng(9))
+    found = first_order.faults(
+        protocol.build_clinr_tr(circuit, n, drawn, LOW_NOISE)
+    )
+    for k in range(t):
+        expected = sum(
+            fault.probability
+            for fault in found
+            if fault.detected and fault.tag.split("/")[1] == str(k)
+        )
+        rejected = 1 - estimate.chunk_accepted[k] / shots
+        assert_close_to_first_order(rejected, expected, shots)

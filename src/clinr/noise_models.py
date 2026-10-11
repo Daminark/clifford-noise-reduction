@@ -14,6 +14,7 @@ References
 
 from __future__ import annotations
 
+import numbers
 from dataclasses import dataclass
 
 __all__ = [
@@ -23,8 +24,15 @@ __all__ = [
 ]
 
 
+def _check_number(name: str, value: object) -> None:
+    """Raise ``TypeError``, naming ``name``, unless ``value`` is a number."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise TypeError(f"{name} must be a number, got {type(value).__name__}")
+
+
 def _check_rate(name: str, rate: float) -> None:
-    """Raise ``ValueError``, naming ``name``, unless ``rate`` is in [0, 1]."""
+    """Raise unless ``rate`` is a number in [0, 1], naming ``name``."""
+    _check_number(name, rate)
     if not 0.0 <= rate <= 1.0:
         raise ValueError(f"{name} must lie in [0, 1], got {rate}")
 
@@ -49,6 +57,8 @@ class NoiseModel:
 
     Raises
     ------
+    TypeError
+        If a rate is not a number.
     ValueError
         If any rate lies outside [0, 1].
     """
@@ -81,6 +91,8 @@ def uniform_noise(p: float) -> NoiseModel:
 
     Raises
     ------
+    TypeError
+        If ``p`` is not a number.
     ValueError
         If ``p`` lies outside [0, 1].
     """
@@ -110,11 +122,14 @@ def asymmetric_noise(p2: float, ratio: float = 10.0) -> NoiseModel:
 
     Raises
     ------
+    TypeError
+        If ``p2`` or ``ratio`` is not a number.
     ValueError
         If ``p2`` lies outside [0, 1], if ``ratio`` is not positive, or if
         ``p2 / ratio`` exceeds 1.
     """
     _check_rate("p2", p2)
+    _check_number("ratio", ratio)
     if not ratio > 0.0:
         raise ValueError(f"ratio must be positive, got {ratio}")
     rest = p2 / ratio

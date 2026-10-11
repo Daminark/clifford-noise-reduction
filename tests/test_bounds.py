@@ -1,6 +1,7 @@
 """Tests for the analytic bounds in ``clinr.bounds``."""
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -202,33 +203,62 @@ def test_idealized_checks_never_make_the_bound_worse(restricted_checks):
 # ---------------------------------------------------------------------------
 # Soundness against measurement
 # ---------------------------------------------------------------------------
-SOUNDNESS_CASES = [
-    (n, t, r) for n in (2, 3, 8) for t in (1, 2) for r in (0, 2, 4)
-] + [(25, 1, r) for r in (0, 4)]
+def soundness_cases() -> list[Any]:
+    """Return the cases, each once: without checks the options do nothing.
+
+    ``n = 25`` runs in the precise tier only, since each case takes over a
+    second.
+    """
+    tiers = [
+        ("quick", 8, 20000, ()),
+        ("precise", 32, 50000, (pytest.mark.slow,)),
+    ]
+    options = [
+        (restricted, noisy)
+        for restricted in (False, True)
+        for noisy in (True, False)
+    ]
+    sizes = [(n, t) for n in (2, 3, 8) for t in (1, 2)] + [(25, 1)]
+    cases = []
+    for tier, draws, shots, marks in tiers:
+        for n, t in sizes:
+            if n == 25 and tier == "quick":
+                continue
+            for r in (0, 4) if n == 25 else (0, 2, 4):
+                for restricted, noisy in options if r else options[:1]:
+                    cases.append(
+                        pytest.param(
+                            n,
+                            t,
+                            r,
+                            restricted,
+                            noisy,
+                            draws,
+                            shots,
+                            marks=marks,
+                            id=f"{tier}-{n}-{t}-{r}-{restricted}-{noisy}",
+                        )
+                    )
+    return cases
 
 
 @pytest.mark.parametrize(
-    ("draws", "shots"),
-    [
-        pytest.param(8, 20000, id="quick"),
-        pytest.param(32, 50000, id="precise", marks=pytest.mark.slow),
-    ],
+    ("n", "t", "r", "restricted_checks", "noisy_checks", "draws", "shots"),
+    soundness_cases(),
 )
-@pytest.mark.parametrize(("n", "t", "r"), SOUNDNESS_CASES)
-@pytest.mark.parametrize("restricted_checks", [False, True])
-@pytest.mark.parametrize("noisy_checks", [True, False])
 def test_measured_logical_error_rate_never_exceeds_the_bound(
     n, t, r, restricted_checks, noisy_checks, draws, shots
 ):
-    """The protocol's rate over random check draws, with 5 standard errors.
+    """The protocol's rate over random check draws, within 5 standard errors.
 
     The bound covers the protocol, which draws new checks for every attempt,
     so the measurement is the fresh-draw rate over draws; one fixed check
     set may do worse. Its standard error is taken over the draws, so it
     counts the spread between draws, which dominates, as well as shot noise.
-    The slack is at most 10% of the bound in the quick tier (8 draws of 2e4
-    shots) and 4% in the precise tier (32 draws of 5e4 shots), so an unsound
-    bound passes only if it understates the rate by less than that.
+    The quick tier (8 draws of 2e4 shots) is coarse: in the noisiest cases
+    the 5 standard errors reach about half the bound, so it catches only a
+    grossly unsound bound. The precise tier (32 draws of 5e4 shots) is the
+    tighter check.
     """
     noise = noise_models.asymmetric_noise(2e-3)
     circuit = seeded_circuit(n, 16 * n, seed=n)
@@ -404,7 +434,9 @@ def test_choose_tr_recommends_a_pair_whose_bound_beats_the_direct_one():
     circuit = seeded_circuit(3, 200, seed=4)
     noise = noise_models.asymmetric_noise(1e-4)
 
-    choice = bounds.choose_tr(circuit, 3, noise, max_overhead=4.0, r_max=6)
+    choice = bounds.choose_tr(
+        circuit, 3, noise, max_overhead=4.0, r_max=6, t_max=20
+    )
 
     assert choice is not None
     t, r = choice

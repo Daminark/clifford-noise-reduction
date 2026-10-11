@@ -23,6 +23,8 @@ from pathlib import Path
 import numpy as np
 import stim
 
+from . import _validation
+
 __all__ = [
     "random_gate_sequence",
     "random_clifford",
@@ -60,7 +62,8 @@ def random_gate_sequence(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        If ``rng`` is not a ``numpy.random.Generator``, or ``n`` or
+        ``size`` is not an integer.
     ValueError
         If ``n < 1`` or ``size < 0``.
 
@@ -73,6 +76,8 @@ def random_gate_sequence(
         raise TypeError(
             f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
         )
+    _validation.require_int(n, "n")
+    _validation.require_int(size, "size")
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if size < 0:
@@ -108,6 +113,8 @@ def random_clifford(n: int) -> stim.Circuit:
 
     Raises
     ------
+    TypeError
+        If ``n`` is not an integer.
     ValueError
         If ``n < 1``.
 
@@ -118,6 +125,7 @@ def random_clifford(n: int) -> stim.Circuit:
     generated set with :func:`save_circuits` for anything that must be
     rerun.
     """
+    _validation.require_int(n, "n")
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     return stim.Tableau.random(n).to_circuit(method="elimination")
@@ -139,9 +147,15 @@ def random_cliffords(n: int, count: int) -> list[stim.Circuit]:
 
     Raises
     ------
+    TypeError
+        If ``n`` or ``count`` is not an integer.
     ValueError
-        If ``count < 1``.
+        If ``n < 1`` or ``count < 1``.
     """
+    _validation.require_int(n, "n")
+    _validation.require_int(count, "count")
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
     if count < 1:
         raise ValueError(f"count must be positive, got {count}")
     return [random_clifford(n) for _ in range(count)]
@@ -161,11 +175,15 @@ def save_circuits(circuits: list[stim.Circuit], path: str | Path) -> None:
 
     Raises
     ------
+    TypeError
+        If an element of ``circuits`` is not a ``stim.Circuit``.
     ValueError
         If ``circuits`` is empty.
     """
     if not circuits:
         raise ValueError("circuits must not be empty")
+    for circuit in circuits:
+        _validation.require_circuit(circuit, "each element of circuits")
     text = json.dumps([str(circuit) for circuit in circuits], indent=1)
     Path(path).write_text(text, encoding="utf-8")
 

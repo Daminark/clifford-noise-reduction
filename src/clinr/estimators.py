@@ -35,7 +35,8 @@ import numpy as np
 import stim
 from scipy import stats
 
-from . import accounting, checks, protocol
+from . import _validation, accounting, protocol
+from .checks import draw_checks, draw_cznr_checks
 from .noise_models import NoiseModel
 
 __all__ = [
@@ -93,10 +94,14 @@ def wilson_interval(
 
     Raises
     ------
+    TypeError
+        If ``errors`` or ``trials`` is not an integer.
     ValueError
         If ``trials`` or ``errors`` is negative, if ``errors`` exceeds
         ``trials``, or if ``confidence`` is not strictly between 0 and 1.
     """
+    _validation.require_int(errors, "errors")
+    _validation.require_int(trials, "trials")
     if trials < 0:
         raise ValueError(f"trials must be non-negative, got {trials}")
     if errors < 0:
@@ -156,6 +161,8 @@ class Estimate:
 
     Raises
     ------
+    TypeError
+        If a count is not an integer or an option is not a bool.
     ValueError
         If any of the constraints above fails.
     """
@@ -177,6 +184,25 @@ class Estimate:
 
     def __post_init__(self) -> None:
         """Check the constraints stated in the class docstring."""
+        for name in ("shots", "accepted", "errors", "s1", "s2", "n"):
+            _validation.require_int(getattr(self, name), name)
+        for name in ("chunk_accepted", "chunk_checks", "chunk_weight"):
+            for value in getattr(self, name):
+                _validation.require_int(value, f"each entry of {name}")
+        for pair in self.chunk_counts:
+            for value in pair:
+                _validation.require_int(value, "each entry of chunk_counts")
+        for name in (
+            "noisy_checks",
+            "restricted_checks",
+            "native_plus",
+            "cznr",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(
+                    f"{name} must be a bool, got "
+                    f"{type(getattr(self, name)).__name__}"
+                )
         if self.shots < 1:
             raise ValueError(f"shots must be positive, got {self.shots}")
         if self.n < 1:
@@ -221,6 +247,28 @@ class Estimate:
                 f"{self.accepted} shots accepted overall, got "
                 f"{self.chunk_accepted}"
             )
+        lengths = {
+            len(self.chunk_accepted),
+            len(self.chunk_checks),
+            len(self.chunk_weight),
+            len(self.chunk_counts),
+        }
+        if len(lengths) > 1:
+            raise ValueError(
+                "per-chunk tuples disagree in length: "
+                f"{len(self.chunk_accepted)}, {len(self.chunk_checks)}, "
+                f"{len(self.chunk_weight)}, {len(self.chunk_counts)}"
+            )
+        if any(
+            checks == 0 and accepted != self.shots
+            for checks, accepted in zip(
+                self.chunk_checks, self.chunk_accepted, strict=True
+            )
+        ):
+            raise ValueError(
+                "a chunk without checks accepts every shot, got "
+                f"{self.chunk_accepted} for checks {self.chunk_checks}"
+            )
         if self.cznr and self.restricted_checks:
             raise ValueError(
                 "CZNR draws uniform checks only, so cznr and "
@@ -234,25 +282,13 @@ class Estimate:
         if any(
             not least * checks <= weight <= worst * checks
             for weight, checks in zip(
-                self.chunk_weight, self.chunk_checks, strict=False
+                self.chunk_weight, self.chunk_checks, strict=True
             )
         ):
             raise ValueError(
                 f"each chunk's check weight must lie between {least} and "
                 f"{worst} times its number of checks, got weights "
                 f"{self.chunk_weight} for checks {self.chunk_checks}"
-            )
-        lengths = {
-            len(self.chunk_accepted),
-            len(self.chunk_checks),
-            len(self.chunk_weight),
-            len(self.chunk_counts),
-        }
-        if len(lengths) > 1:
-            raise ValueError(
-                "per-chunk tuples disagree in length: "
-                f"{len(self.chunk_accepted)}, {len(self.chunk_checks)}, "
-                f"{len(self.chunk_weight)}, {len(self.chunk_counts)}"
             )
         if self.chunk_counts:
             totals = (
@@ -360,14 +396,20 @@ def estimate_clinr(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        If ``rng`` is not a ``numpy.random.Generator``, ``shots`` is not an
+        integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`; or as the functions it calls
+        raise for the other arguments.
     ValueError
-        If ``shots`` is not positive.
+        If ``shots`` is not positive, or as the functions it calls raise
+        for the other arguments.
     """
     _check_rng(rng)
+    _validation.require_int(shots, "shots")
+    _validation.require_noise(noise)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
-    drawn = checks.draw_checks(
+    drawn = draw_checks(
         circuit, n, t, r, rng, restricted_checks=restricted_checks
     )
     built = protocol.build_clinr_tr(
@@ -437,14 +479,20 @@ def estimate_cznr(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        If ``rng`` is not a ``numpy.random.Generator``, ``shots`` is not an
+        integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`; or as the functions it calls
+        raise for the other arguments.
     ValueError
-        If ``shots`` is not positive.
+        If ``shots`` is not positive, or as the functions it calls raise
+        for the other arguments.
     """
     _check_rng(rng)
+    _validation.require_int(shots, "shots")
+    _validation.require_noise(noise)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
-    drawn = checks.draw_cznr_checks(circuit, n, t, r, rng)
+    drawn = draw_cznr_checks(circuit, n, t, r, rng)
     built = protocol.build_cznr_tr(
         circuit,
         n,
@@ -507,11 +555,17 @@ def estimate_direct(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        If ``rng`` is not a ``numpy.random.Generator``, ``shots`` is not an
+        integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`; or as the functions it calls
+        raise for the other arguments.
     ValueError
-        If ``shots`` is not positive.
+        If ``shots`` is not positive, or as the functions it calls raise
+        for the other arguments.
     """
     _check_rng(rng)
+    _validation.require_int(shots, "shots")
+    _validation.require_noise(noise)
     if shots < 1:
         raise ValueError(f"shots must be positive, got {shots}")
     built = protocol.build_direct(circuit, n, noise)
@@ -602,9 +656,9 @@ def _setting(estimate: Estimate) -> dict[str, int | bool]:
 def _comparable(estimates: list[Estimate]) -> None:
     """Raise ``ValueError`` unless ``estimates`` are draws for one setting.
 
-    That is: at least one estimate, and the same gate counts, checks per
-    chunk, ``n`` and options throughout. Shot counts and check weights may
-    differ between draws.
+    That is: at least one estimate, and the same gate counts, overall and
+    per chunk, checks per chunk, ``n`` and options throughout. Shot counts
+    and check weights may differ between draws.
     """
     if not estimates:
         raise ValueError("estimates must not be empty")
@@ -614,6 +668,11 @@ def _comparable(estimates: list[Estimate]) -> None:
             raise ValueError(
                 f"gate counts disagree: {(first.s1, first.s2)} "
                 f"and {(other.s1, other.s2)}"
+            )
+        if other.chunk_counts != first.chunk_counts:
+            raise ValueError(
+                f"gate counts per chunk disagree: {first.chunk_counts} "
+                f"and {other.chunk_counts}"
             )
         if other.chunk_checks != first.chunk_checks:
             raise ValueError(
@@ -753,8 +812,7 @@ def design_effect(estimates: list[Estimate]) -> float:
 
     Notes
     -----
-    A draw that saw no errors contributes zero within-draw variance, so the
-    ratio is biased upward when errors are rare.
+    When errors are rare, few draws see any, and the ratio is noisy.
     """
     _comparable(estimates)
     _each_accepted(estimates)

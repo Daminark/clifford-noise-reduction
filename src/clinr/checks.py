@@ -21,7 +21,7 @@ from __future__ import annotations
 import numpy as np
 import stim
 
-from . import protocol
+from . import _validation, protocol
 
 __all__ = [
     "restricted_family",
@@ -38,7 +38,7 @@ def restricted_family(
     With ``n = len(tableau)``, the family is the images of the Bell
     stabilizers ``XX``, ``ZZ`` and ``YY`` of each pair under ``I ⊗ C``, in
     that order, pair by pair. The third of each triple is the product of the
-    first two, up to a sign that nothing downstream reads.
+    first two, with the sign under which it stabilizes the resource.
 
     Parameters
     ----------
@@ -107,14 +107,17 @@ def draw_checks(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        If ``rng`` is not a ``numpy.random.Generator``, ``circuit`` is not a
+        ``stim.Circuit``, or ``n``, ``t`` or ``r`` is not an integer.
     ValueError
-        If ``r`` is negative.
+        If ``r`` is negative, or as :func:`clinr.protocol.chunk_circuit`
+        raises for ``circuit``, ``n`` and ``t``.
     """
     if not isinstance(rng, np.random.Generator):
         raise TypeError(
             f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
         )
+    _validation.require_int(r, "r")
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     bare, image = list(range(n)), list(range(n, 2 * n))
@@ -171,14 +174,17 @@ def draw_cznr_checks(
     Raises
     ------
     TypeError
-        If ``rng`` is not a ``numpy.random.Generator``.
+        As in :func:`draw_checks`.
     ValueError
-        If ``r`` is negative or ``circuit`` has a gate other than ``CZ``.
+        If ``r`` is negative, if ``circuit`` has a gate other than ``CZ``,
+        or as :func:`clinr.protocol.chunk_circuit` raises for ``circuit``,
+        ``n`` and ``t``.
     """
     if not isinstance(rng, np.random.Generator):
         raise TypeError(
             f"rng must be a numpy.random.Generator, got {type(rng).__name__}"
         )
+    _validation.require_int(r, "r")
     if r < 0:
         raise ValueError(f"r must be non-negative, got {r}")
     protocol.require_cz_only(circuit)

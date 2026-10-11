@@ -24,7 +24,7 @@ from typing import NamedTuple
 
 import stim
 
-from . import protocol
+from . import _validation, protocol
 
 
 class Region(NamedTuple):
@@ -70,7 +70,8 @@ __all__ = [
 
 
 def _check_n(n: int) -> None:
-    """Raise ``ValueError`` unless ``n`` is at least 1."""
+    """Raise unless ``n`` is an integer of at least 1."""
+    _validation.require_int(n, "n")
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
 
@@ -123,6 +124,8 @@ def prep_region(n: int, native_plus: bool) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``n`` is not an integer.
     ValueError
         If ``n < 1``.
     """
@@ -152,9 +155,13 @@ def check_region(count: int, weight: int, native_plus: bool) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``count`` or ``weight`` is not an integer.
     ValueError
         If ``count`` or ``weight`` is negative.
     """
+    _validation.require_int(count, "count")
+    _validation.require_int(weight, "weight")
     if count < 0:
         raise ValueError(f"count must be non-negative, got {count}")
     if weight < 0:
@@ -185,6 +192,8 @@ def teleport_region(n: int) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``n`` is not an integer.
     ValueError
         If ``n < 1``.
     """
@@ -210,6 +219,8 @@ def cznr_prep_region(n: int, native_plus: bool) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``n`` is not an integer.
     ValueError
         If ``n < 1``.
     """
@@ -235,6 +246,8 @@ def cznr_teleport_region(n: int) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``n`` is not an integer.
     ValueError
         If ``n < 1``.
     """
@@ -315,9 +328,13 @@ def protected_region(prep: Region, s1: int, s2: int, checks: Region) -> Region:
 
     Raises
     ------
+    TypeError
+        If ``s1`` or ``s2`` is not an integer.
     ValueError
         If ``s1`` or ``s2`` is negative.
     """
+    _validation.require_int(s1, "s1")
+    _validation.require_int(s2, "s2")
     if s1 < 0 or s2 < 0:
         raise ValueError(
             f"gate counts must be non-negative, got s1 = {s1}, s2 = {s2}"
@@ -362,10 +379,13 @@ def expected_overhead(
 
     Raises
     ------
+    TypeError
+        If a gate count is not an integer.
     ValueError
         If ``counts``, ``check_regions`` and ``acceptance`` differ in
-        length, if the chunks hold no gates, or if an acceptance probability
-        lies outside [0, 1].
+        length, if a gate count or an operation count of a region is
+        negative, if the chunks hold no gates, or if an acceptance
+        probability lies outside [0, 1].
     """
     lengths = {len(counts), len(check_regions), len(acceptance)}
     if len(lengths) > 1:
@@ -374,6 +394,16 @@ def expected_overhead(
             f"chunk, got {len(counts)}, {len(check_regions)} and "
             f"{len(acceptance)}"
         )
+    regions = [scheme.prep, scheme.teleport, *check_regions]
+    if any(count < 0 for region in regions for count in region):
+        raise ValueError(
+            f"operation counts must be non-negative, got {regions}"
+        )
+    # Each attempt's operations; protected_region validates the gate counts.
+    attempts = [
+        sum(protected_region(scheme.prep, s1, s2, checks))
+        for (s1, s2), checks in zip(counts, check_regions, strict=True)
+    ]
     size = sum(s1 + s2 for s1, s2 in counts)
     if size == 0:
         raise ValueError("the chunks must hold at least one gate")
@@ -381,14 +411,11 @@ def expected_overhead(
         raise ValueError(
             f"acceptance probabilities must lie in [0, 1], got {acceptance}"
         )
+    if 0.0 in acceptance:
+        return math.inf
     tail = sum(scheme.teleport)
-    expected = 0.0
-    for (s1, s2), checks, q in zip(
-        counts, check_regions, acceptance, strict=True
-    ):
-        if q == 0.0:
-            return math.inf
-        expected += (
-            tail + sum(protected_region(scheme.prep, s1, s2, checks)) / q
-        )
+    expected = sum(
+        tail + attempt / q
+        for attempt, q in zip(attempts, acceptance, strict=True)
+    )
     return expected / size

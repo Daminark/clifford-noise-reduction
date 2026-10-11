@@ -41,4 +41,4 @@ The pages are executed when the site is built, and the build caches each page by
 ## Check which code produced a file
 
 Each results file records, under `runs`, the commit it was run at, whether the work tree had uncommitted changes, the versions of Python, the package, Stim and NumPy, and the platform.
-The commits since each of the runs above add code without changing what the scripts compute: readers of the results files, the CZNR variant, tags on noise channels that leave the sampled circuits unchanged, and refactors that leave the bounds' values and the built circuits unchanged.
+The commits since each of the runs above add code without changing what the scripts compute: readers of the results files, the CZNR variant, tags on noise channels, refactors that leave the bounds' values unchanged, and checks and readouts measured with their signs, which leaves every circuit's detector error model and seeded samples unchanged.

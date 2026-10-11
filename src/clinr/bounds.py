@@ -37,7 +37,7 @@ from typing import NamedTuple
 
 import stim
 
-from . import accounting, protocol
+from . import _validation, accounting, protocol
 from .accounting import Region
 from .noise_models import NoiseModel
 
@@ -148,11 +148,14 @@ class ChunkTerms(NamedTuple):
         return numerator / self.acceptance
 
 
-def _check_sizes(n: int, r: int, name: str = "r") -> None:
-    """Raise ``ValueError`` unless ``n >= 1`` and ``r >= 0``.
+def _check_sizes(n: int, r: int, noise: NoiseModel, name: str = "r") -> None:
+    """Raise unless ``n >= 1`` and ``r >= 0`` are integers, ``noise`` a model.
 
-    The message calls ``r`` by ``name``.
+    The messages call ``r`` by ``name``.
     """
+    _validation.require_int(n, "n")
+    _validation.require_int(r, name)
+    _validation.require_noise(noise)
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if r < 0:
@@ -335,10 +338,16 @@ def plog_bound(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``t`` or ``r`` is
+        not an integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1`` or ``r < 0``.
+        If ``n < 1``, ``r < 0``, ``t < 1``, or ``circuit`` is not as
+        :func:`clinr.protocol.gate_list` accepts or acts on a qubit index
+        of ``n`` or more.
     """
-    _check_sizes(n, r)
+    _check_sizes(n, r, noise)
     family = _check_family(n, r, restricted_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
@@ -373,7 +382,16 @@ def direct_plog_bound(circuit: stim.Circuit, noise: NoiseModel) -> float:
     float
         An upper bound on the logical error rate of the circuit that
         :func:`clinr.protocol.build_direct` builds.
+
+    Raises
+    ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit`` or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
+    ValueError
+        If ``circuit`` is not as :func:`clinr.protocol.gate_list` accepts.
     """
+    _validation.require_noise(noise)
     s1, s2 = accounting.gate_counts(circuit)
     return _fault_prob(noise, Region(n1=s1, n2=s2, nm=0, n_prep=0))
 
@@ -408,10 +426,16 @@ def plog_terms(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``t`` or ``r`` is
+        not an integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1`` or ``r < 1``.
+        If ``n < 1``, ``r < 1``, ``t < 1``, or ``circuit`` is not as
+        :func:`clinr.protocol.gate_list` accepts or acts on a qubit index
+        of ``n`` or more.
     """
-    _check_sizes(n, r)
+    _check_sizes(n, r, noise)
     if r < 1:
         raise ValueError(f"r must be at least 1, got {r}")
     family = _check_family(n, r, restricted_checks)
@@ -465,10 +489,16 @@ def overhead_bound(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``t`` or ``r`` is
+        not an integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1`` or ``r < 0``.
+        If ``n < 1``, ``r < 0``, ``t < 1``, if ``circuit`` is not as
+        :func:`clinr.protocol.gate_list` accepts or acts on a qubit index
+        of ``n`` or more, or if the chunks hold no gates.
     """
-    _check_sizes(n, r)
+    _check_sizes(n, r, noise)
     family = _check_family(n, r, restricted_checks)
     chunks = protocol.chunk_circuit(circuit, n, t)
     counts = [accounting.gate_counts(chunk) for chunk in chunks]
@@ -532,11 +562,20 @@ def choose_tr(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``r_max`` or
+        ``t_max`` is not an integer, ``max_overhead`` is not a number, or
+        ``noise`` is not a :class:`clinr.noise_models.NoiseModel`.
     ValueError
         If ``n < 1``, ``r_max < 0``, ``t_max < 1``, ``max_overhead`` is less
-        than 1, or ``circuit`` has no gates.
+        than 1, or ``circuit`` has no gates, is not as
+        :func:`clinr.protocol.gate_list` accepts, or acts on a qubit index
+        of ``n`` or more.
     """
-    _check_sizes(n, r_max, "r_max")
+    _check_sizes(n, r_max, noise, "r_max")
+    if t_max is not None:
+        _validation.require_int(t_max, "t_max")
+    _validation.require_real(max_overhead, "max_overhead")
     if not max_overhead >= 1.0:
         raise ValueError(
             f"max_overhead must be at least 1, got {max_overhead}"
@@ -607,10 +646,15 @@ def cznr_plog_bound(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``t`` or ``r`` is
+        not an integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
+        If ``n < 1``, ``r < 0``, ``t < 1``, or ``circuit`` has a gate other
+        than ``CZ`` or acts on a qubit index of ``n`` or more.
     """
-    _check_sizes(n, r)
+    _check_sizes(n, r, noise)
     protocol.require_cz_only(circuit)
     chunks = protocol.chunk_circuit(circuit, n, t)
     return _plog_from_counts(
@@ -655,10 +699,16 @@ def cznr_overhead_bound(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n``, ``t`` or ``r`` is
+        not an integer, or ``noise`` is not a
+        :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1``, ``r < 0`` or ``circuit`` has a gate other than ``CZ``.
+        If ``n < 1``, ``r < 0``, ``t < 1``, if ``circuit`` has a gate other
+        than ``CZ`` or acts on a qubit index of ``n`` or more, or if the
+        chunks hold no gates.
     """
-    _check_sizes(n, r)
+    _check_sizes(n, r, noise)
     protocol.require_cz_only(circuit)
     chunks = protocol.chunk_circuit(circuit, n, t)
     return _overhead_from_counts(

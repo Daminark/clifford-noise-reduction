@@ -14,7 +14,8 @@ All three carry a Choi harness that reads out whether the implemented
 channel is ``C``, and all three are exact at zero noise: every detector and
 observable is deterministic.
 
-Register layout of :func:`build_clinr_tr`, ``4n + 1`` qubits::
+Register layout of :func:`build_clinr_tr`, ``4n + 1`` qubits, or ``4n``
+without checks::
 
     b1  [0,   n)     data input of the first chunk
     b2  [n,  2n)     resource half the data is teleported against
@@ -24,10 +25,10 @@ Register layout of :func:`build_clinr_tr`, ``4n + 1`` qubits::
 
 After each chunk, ``b1`` and ``b3`` exchange roles by relabeling, with no
 gates, so the output ends on ``b3`` when ``t`` is odd and on ``b1`` when
-``t`` is even. :func:`build_cznr_tr` has ``3n + 1`` qubits: the data
-``[0, n)``, the graph state ``[n, 2n)``, the reference ``[2n, 3n)`` and the
-ancilla ``3n``, with the data and graph-state blocks exchanging roles after
-each chunk.
+``t`` is even. :func:`build_cznr_tr` has ``3n + 1`` qubits, or ``3n``
+without checks: the data ``[0, n)``, the graph state ``[n, 2n)``, the
+reference ``[2n, 3n)`` and the ancilla ``3n``, with the data and graph-state
+blocks exchanging roles after each chunk.
 
 Noise follows a :class:`clinr.noise_models.NoiseModel`: ``DEPOLARIZE1`` at
 ``p1`` after single-qubit gates, ``DEPOLARIZE2`` at ``p2`` after two-qubit
@@ -59,6 +60,7 @@ from __future__ import annotations
 
 import stim
 
+from . import _validation
 from .noise_models import NoiseModel
 
 __all__ = [
@@ -102,13 +104,25 @@ def _prep_noisy(
 
 
 def _measure_noisy(
-    circ: stim.Circuit, targets: list[int], noise: NoiseModel, tag: str
+    circ: stim.Circuit,
+    targets: list[int],
+    noise: NoiseModel,
+    tag: str,
+    *,
+    invert: bool = False,
 ) -> None:
-    """Append ``M`` on ``targets``, each outcome flipped at ``p_m``."""
+    """Append ``M`` on ``targets``, each outcome flipped at ``p_m``.
+
+    With ``invert``, each outcome is reported inverted, which adds no fault
+    location.
+    """
+    gate_targets = [
+        stim.target_inv(target) if invert else target for target in targets
+    ]
     if noise.p_m > 0:
-        circ.append("M", targets, noise.p_m, tag=tag)
+        circ.append("M", gate_targets, noise.p_m, tag=tag)
     else:
-        circ.append("M", targets)
+        circ.append("M", gate_targets)
 
 
 def _apply_noisy(
@@ -176,11 +190,14 @@ def gate_list(circuit: stim.Circuit) -> list[tuple[str, list[int]]]:
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``.
     ValueError
         If an instruction is a noise channel, a measurement or a reset, if a
         unitary acts on more than two qubits, or if a gate has a target
         other than a qubit.
     """
+    _validation.require_circuit(circuit)
     gates: list[tuple[str, list[int]]] = []
     # Circuit iterates through __getitem__, which Stim's stubs do not model.
     for inst in circuit.flattened():  # type: ignore[attr-defined]
@@ -225,12 +242,14 @@ def _blocks(n: int) -> tuple[list[int], list[int], list[int], list[int], int]:
 
 
 def _pauli_to_mpp_targets(pauli: stim.PauliString) -> list[stim.GateTarget]:
-    """Return ``MPP`` targets measuring the product ``pauli``, sign ignored.
+    """Return ``MPP`` targets measuring ``pauli``, sign included.
 
-    ``pauli`` must not be the identity. The sign does not matter because
-    Stim compares detectors and observables against a noiseless reference.
+    ``pauli`` must not be the identity, and its sign must be ``+1`` or
+    ``-1``. A ``-1`` sign inverts the first target, so the outcome is 0
+    exactly when the state is in the ``+1`` eigenspace of ``pauli``.
     """
     assert pauli.weight > 0, "MPP of the identity"
+    assert pauli.sign in (1, -1), f"non-Hermitian sign {pauli.sign}"
     ctor = {1: stim.target_x, 2: stim.target_y, 3: stim.target_z}
     targets: list[stim.GateTarget] = []
     for qubit in range(len(pauli)):
@@ -239,24 +258,39 @@ def _pauli_to_mpp_targets(pauli: stim.PauliString) -> list[stim.GateTarget]:
             continue
         if targets:
             targets.append(stim.target_combiner())
-        targets.append(ctor[code](qubit))
+        invert = not targets and pauli.sign == -1
+        targets.append(ctor[code](qubit, invert=invert))
     return targets
 
 
 def _pad_to_width(circuit: stim.Circuit, n: int) -> stim.Circuit:
-    """Return ``circuit`` after an identity on all ``n`` qubits.
+    """Return the gates of ``circuit`` after an identity on all ``n`` qubits.
 
     Stim sizes a tableau by the highest qubit index a circuit mentions, so
-    the padding makes the tableau exactly ``n`` wide. This is where the
-    public builders reject a circuit wider than ``n``.
+    the padding makes the tableau exactly ``n`` wide; annotations are left
+    out, so a qubit they alone mention does not widen it. This is where the
+    public builders reject a circuit that acts outside ``[0, n)``.
     """
-    if circuit.num_qubits > n:
+    gates = gate_list(circuit)
+    _check_width(gates, n)
+    return _padded(gates, n)
+
+
+def _check_width(gates: list[tuple[str, list[int]]], n: int) -> None:
+    """Raise ``ValueError`` if a gate acts outside ``[0, n)``."""
+    highest = max((q for _, targets in gates for q in targets), default=-1)
+    if highest >= n:
         raise ValueError(
-            f"circuit acts on {circuit.num_qubits} qubits, exceeding n = {n}"
+            f"circuit acts on qubit {highest}, outside [0, n) for n = {n}"
         )
+
+
+def _padded(gates: list[tuple[str, list[int]]], n: int) -> stim.Circuit:
+    """Return ``gates`` after an identity on all ``n`` qubits."""
     padded = stim.Circuit()
     padded.append("I", list(range(n)))
-    padded += circuit
+    for name, targets in gates:
+        padded.append(name, targets)
     return padded
 
 
@@ -292,16 +326,19 @@ def stabilizer_gens(
     -------
     list of stim.PauliString
         ``2n`` independent, pairwise commuting generators, ordered
-        ``X``-type then ``Z``-type for each pair in turn. Signs are dropped;
-        detection depends only on commutation.
+        ``X``-type then ``Z``-type for each pair in turn, each with the sign
+        under which it stabilizes the resource.
 
     Raises
     ------
+    TypeError
+        If ``total`` is not an integer.
     ValueError
         If ``tableau`` acts on no qubits, if ``bare`` or ``image`` does not
         hold ``len(tableau)`` indices, or if the indices repeat or fall
         outside ``[0, total)``.
     """
+    _validation.require_int(total, "total")
     n = len(tableau)
     if n < 1:
         raise ValueError("tableau must act on at least one qubit")
@@ -326,7 +363,9 @@ def stabilizer_gens(
             letters[bare[i]] = base
             for j in range(n):
                 letters[image[j]] = _PAULI_CHR[conjugated[j]]
-            gens.append(stim.PauliString("".join(letters)))
+            gen = stim.PauliString("".join(letters))
+            gen.sign = conjugated.sign
+            gens.append(gen)
     return gens
 
 
@@ -347,9 +386,12 @@ def _measure_stabilizer_noisy(
     The gadget is ``|+>`` on ``anc``, a controlled Pauli from ``anc`` to each
     support qubit, ``H``, then ``M``: ``w + 4`` fault locations for weight
     ``w``, or ``w + 3`` with ``native_plus``. ``anc`` must lie outside the
-    support of ``pauli``.
+    support of ``pauli``. The record is 0 exactly when the state is in the
+    ``+1`` eigenspace of ``pauli``, its sign included, so a check that
+    stabilizes the resource reads 0 without a fault.
     """
     assert pauli[anc] == 0, f"ancilla {anc} in the support of {pauli}"
+    assert pauli.sign in (1, -1), f"non-Hermitian sign {pauli.sign}"
     controlled = {1: "CX", 2: "CY", 3: "CZ"}
     _prep_plus_noisy(circ, [anc], noise, tag, native_plus=native_plus)
     for qubit in range(len(pauli)):
@@ -358,7 +400,7 @@ def _measure_stabilizer_noisy(
             continue
         _apply_noisy(circ, controlled[code], [anc, qubit], noise, tag)
     _apply_noisy(circ, "H", [anc], noise, tag)
-    _measure_noisy(circ, [anc], noise, tag)
+    _measure_noisy(circ, [anc], noise, tag, invert=pauli.sign == -1)
 
 
 # ---------------------------------------------------------------------------
@@ -391,15 +433,21 @@ def chunk_circuit(circuit: stim.Circuit, n: int, t: int) -> list[stim.Circuit]:
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit`` or ``n`` or ``t`` is not
+        an integer.
     ValueError
         If ``n < 1``, ``t < 1``, or ``circuit`` acts on a qubit index of
         ``n`` or more.
     """
+    _validation.require_int(n, "n")
+    _validation.require_int(t, "t")
     if n < 1:
         raise ValueError(f"n must be at least 1, got {n}")
     if t < 1:
         raise ValueError(f"t must be at least 1, got {t}")
     gates = gate_list(circuit)
+    _check_width(gates, n)
     s = len(gates)
     s0 = -(-s // t)  # ceil(s / t)
     n_full = s % t or t  # how many chunks have size s0
@@ -407,10 +455,7 @@ def chunk_circuit(circuit: stim.Circuit, n: int, t: int) -> list[stim.Circuit]:
     idx = 0
     for k in range(t):
         size = s0 if k < n_full else s0 - 1
-        sub = stim.Circuit()
-        for name, targets in gates[idx : idx + size]:
-            sub.append(name, targets)
-        chunks.append(_pad_to_width(sub, n))
+        chunks.append(_padded(gates[idx : idx + size], n))
         idx += size
     assert idx == s, f"chunks hold {idx} of {s} gates"
     return chunks
@@ -426,12 +471,40 @@ def _embed(
     for i in range(n):
         out[bare[i]] = check[i]
         out[image[i]] = check[n + i]
+    out.sign = check.sign
     return out
+
+
+def _require_stabilizer(
+    state: stim.TableauSimulator, check: stim.PauliString, k: int, what: str
+) -> None:
+    """Raise ``ValueError`` unless the signed ``check`` stabilizes ``state``.
+
+    ``what`` names the state in the message.
+    """
+    expectation = state.peek_observable_expectation(check)
+    if expectation == -1:
+        raise ValueError(
+            f"chunk {k}: check {check} stabilizes the {what} only with the "
+            "opposite sign"
+        )
+    if expectation != 1:
+        raise ValueError(
+            f"chunk {k}: check {check} does not stabilize the {what}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
+def _check_inputs(n: int, noise: NoiseModel) -> None:
+    """Raise unless ``n`` is an integer of at least 1 and ``noise`` a model."""
+    _validation.require_int(n, "n")
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
+    _validation.require_noise(noise)
+
+
 def _check_same_number_of_checks(
     checks: list[list[stim.PauliString]],
 ) -> None:
@@ -474,9 +547,11 @@ def _choi_observables(
         # The generator's output-block part, in logical indexing.
         conj = stim.PauliString([gen[qubit] for qubit in output])
         records = [stim.target_rec(-1)]
+        # Read once: Stim recounts the whole circuit on every access.
+        measured = out.num_measurements
         for index, pauli in frame.items():
             if not pauli.commutes(conj):
-                records.append(stim.target_rec(index - out.num_measurements))
+                records.append(stim.target_rec(index - measured))
         out.append("OBSERVABLE_INCLUDE", records, observable)
 
 
@@ -502,18 +577,21 @@ def build_direct(
     Returns
     -------
     stim.Circuit
-        On ``4n + 1`` qubits, with no detectors and ``2n`` observables, the
+        On ``4n`` qubits, ``b1`` and ``ref``, with no detectors and ``2n``
+        observables, the
         Choi stabilizers of ``C``; exact at zero noise. Every noise channel
         is tagged ``gates/0``.
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n`` is not an integer,
+        or ``noise`` is not a :class:`clinr.noise_models.NoiseModel`.
     ValueError
-        If ``n < 1``, or if ``circuit`` acts on a qubit index of ``n`` or
-        more.
+        If ``n < 1``, if ``circuit`` is not as :func:`gate_list` accepts, or
+        if it acts on a qubit index of ``n`` or more.
     """
-    if n < 1:
-        raise ValueError(f"n must be at least 1, got {n}")
+    _check_inputs(n, noise)
     full_tableau = _pad_to_width(circuit, n).to_tableau()
     b1, _, _, ref, _ = _blocks(n)
     total = 4 * n + 1
@@ -572,7 +650,8 @@ def build_clinr_tr(
     Returns
     -------
     stim.Circuit
-        On ``4n + 1`` qubits, with one detector per check in chunk order and
+        On ``4n + 1`` qubits, or ``4n`` without checks, with one detector
+        per check in chunk order and
         ``2n`` observables, the Choi stabilizers of ``C``; exact at zero
         noise. Every noise channel is tagged with the region it belongs to
         in chunk ``k``, counted from 0, as :mod:`clinr.accounting` divides
@@ -582,11 +661,19 @@ def build_clinr_tr(
 
     Raises
     ------
+    TypeError
+        If ``circuit`` is not a ``stim.Circuit``, ``n`` is not an integer,
+        ``noise`` is not a :class:`clinr.noise_models.NoiseModel`, or
+        ``checks`` is not a list of lists of ``stim.PauliString``.
     ValueError
-        If the chunks have different numbers of checks, or if a check does
-        not have length ``2n`` or does not stabilize its chunk's resource
-        state.
+        If ``n < 1``, if ``checks`` holds no chunks, if ``circuit`` is not
+        as :func:`gate_list` accepts or acts on a qubit index of ``n`` or
+        more, if the chunks have different numbers of checks, or if a check
+        does not have length ``2n`` or does not stabilize its chunk's
+        resource state with its sign.
     """
+    _check_inputs(n, noise)
+    _validation.require_checks(checks, 2 * n)
     _check_same_number_of_checks(checks)
     full_tableau = _pad_to_width(circuit, n).to_tableau()
     chunks = chunk_circuit(circuit, n, len(checks))
@@ -602,19 +689,18 @@ def build_clinr_tr(
         zip(chunks, checks, strict=True)
     ):
         tableau = chunk.to_tableau()
-        gens = stabilizer_gens(
-            tableau, list(range(n)), list(range(n, 2 * n)), 2 * n
-        )
+        resource = stim.TableauSimulator()
+        for i in range(n):
+            resource.h(i)
+            resource.cx(i, n + i)
+        resource.do_tableau(tableau, list(range(n, 2 * n)))
         for check in chunk_checks:
             if len(check) != 2 * n:
                 raise ValueError(
                     f"chunk {k}: check has length {len(check)}, "
                     f"expected {2 * n}"
                 )
-            if not all(check.commutes(gen) for gen in gens):
-                raise ValueError(
-                    f"chunk {k}: check {check} does not stabilize the resource"
-                )
+            _require_stabilizer(resource, check, k, "resource")
 
         # Protected region: prepare this chunk's resource (I x C_k)|Phi+>.
         prep, gates, teleport = f"prep/{k}", f"gates/{k}", f"teleport/{k}"
@@ -700,13 +786,15 @@ def graph_state_gens(tableau: stim.Tableau) -> list[stim.PauliString]:
     Returns
     -------
     list of stim.PauliString
-        The ``n`` generators, in qubit order, on ``n`` qubits, signs
-        dropped.
+        The ``n`` generators, in qubit order, on ``n`` qubits, each with
+        the sign under which it stabilizes the graph state.
 
     Raises
     ------
     ValueError
-        If ``tableau`` acts on no qubits.
+        If ``tableau`` acts on no qubits, or is not the tableau of a
+        circuit of ``CZ`` gates: one that fixes every ``Z_i`` and takes each
+        ``X_i`` to ``X_i`` times a product of ``Z_j`` with ``j != i``.
     """
     n = len(tableau)
     if n < 1:
@@ -714,7 +802,21 @@ def graph_state_gens(tableau: stim.Tableau) -> list[stim.PauliString]:
     gens = []
     for i in range(n):
         image = tableau.x_output(i)
-        gens.append(stim.PauliString([image[j] for j in range(n)]))
+        z_image = tableau.z_output(i)
+        if (
+            z_image.sign != 1
+            or z_image.pauli_indices() != [i]
+            or z_image[i] != 3
+            or image[i] != 1
+            or any(image[j] not in (0, 3) for j in range(n) if j != i)
+        ):
+            raise ValueError(
+                "tableau is not that of a circuit of CZ gates: qubit "
+                f"{i} maps X to {image} and Z to {z_image}"
+            )
+        gen = stim.PauliString([image[j] for j in range(n)])
+        gen.sign = image.sign
+        gens.append(gen)
     return gens
 
 
@@ -740,7 +842,8 @@ def build_cznr_tr(
     folded into the observables, all ``r`` checks of an attempt are measured,
     and the Choi harness is noiseless.
 
-    Register layout, ``3n + 1`` qubits: the first chunk's data on
+    Register layout, ``3n + 1`` qubits, or ``3n`` without checks: the
+    first chunk's data on
     ``[0, n)``, its resource on ``[n, 2n)``, the Choi reference on
     ``[2n, 3n)`` and the check ancilla at ``3n``. After each chunk the data
     and resource blocks exchange roles by relabeling.
@@ -766,7 +869,8 @@ def build_cznr_tr(
     Returns
     -------
     stim.Circuit
-        On ``3n + 1`` qubits, with one detector per check in chunk order and
+        On ``3n + 1`` qubits, or ``3n`` without checks, with one detector
+        per check in chunk order and
         ``2n`` observables, the Choi stabilizers of ``C``; exact at zero
         noise. Every noise channel is tagged with its region in chunk
         ``k``: ``prep/k`` for the ``|+>`` of the resource, ``gates/k`` for
@@ -775,12 +879,17 @@ def build_cznr_tr(
 
     Raises
     ------
+    TypeError
+        As in :func:`build_clinr_tr`.
     ValueError
-        If ``circuit`` has a gate other than ``CZ`` or acts on a qubit of
-        index ``n`` or more, if the chunks have different numbers of checks,
-        or if a check does not have length ``n`` or does not stabilize its
-        chunk's graph state.
+        If ``n < 1``, if ``checks`` holds no chunks, if ``circuit`` has a
+        gate other than ``CZ`` or acts on a qubit of index ``n`` or more, if
+        the chunks have different numbers of checks, or if a check does not
+        have length ``n`` or does not stabilize its chunk's graph state
+        with its sign.
     """
+    _check_inputs(n, noise)
+    _validation.require_checks(checks, n)
     _check_same_number_of_checks(checks)
     require_cz_only(circuit)
     full_tableau = _pad_to_width(circuit, n).to_tableau()
@@ -799,17 +908,16 @@ def build_cznr_tr(
         zip(chunks, checks, strict=True)
     ):
         tableau = chunk.to_tableau()
-        gens = graph_state_gens(tableau)
+        graph_state = stim.TableauSimulator()
+        for i in range(n):
+            graph_state.h(i)
+        graph_state.do_tableau(tableau, list(range(n)))
         for check in chunk_checks:
             if len(check) != n:
                 raise ValueError(
                     f"chunk {k}: check has length {len(check)}, expected {n}"
                 )
-            if not all(check.commutes(gen) for gen in gens):
-                raise ValueError(
-                    f"chunk {k}: check {check} does not stabilize the "
-                    "graph state"
-                )
+            _require_stabilizer(graph_state, check, k, "graph state")
 
         # Protected region: prepare this chunk's graph state.
         prep, gates, teleport = f"prep/{k}", f"gates/{k}", f"teleport/{k}"
@@ -824,6 +932,7 @@ def build_cznr_tr(
             check = stim.PauliString(total)
             for i in range(n):
                 check[resource[i]] = logical[i]
+            check.sign = logical.sign
             _measure_stabilizer_noisy(
                 out,
                 check,

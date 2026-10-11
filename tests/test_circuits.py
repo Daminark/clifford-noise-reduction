@@ -92,3 +92,8 @@ def test_saved_circuits_load_back_unchanged(tmp_path):
 def test_save_circuits_rejects_an_empty_list(tmp_path):
     with pytest.raises(ValueError, match="must not be empty"):
         circuits.save_circuits([], tmp_path / "empty.json")
+
+
+def test_random_cliffords_rejects_n_below_one():
+    with pytest.raises(ValueError, match="n must be at least 1"):
+        circuits.random_cliffords(0, 3)

@@ -152,7 +152,7 @@ With the readout in place, we turn to how the circuit lays out its qubits.
 For each chunk, the circuit prepares the resource on `b2` and `b3`, measures the checks with `anc`, one detector per check, and Bell-measures the data block against `b2`.
 The output lands on `b3`, so the builder swaps the names of the data block and `b3`, with no gates: the old data block, just measured, is reset to hold the next resource's image half.
 The output ends on `b3` when $t$ is odd and on `b1` when $t$ is even.
-The circuits use $4n + 1$ qubits, where the scheme uses $3n + 1$; the reference makes the difference.
+The circuits use $4n + 1$ qubits, or $4n$ without checks, where the scheme uses $3n + 1$; the reference makes the difference.
 
 Below are both circuits at $n = 2$ for the $C$ of {doc}`the-scheme`, drawn without noise so that no noise channels crowd them.
 First the direct implementation, which applies $C$ to `q0` and `q1`:
@@ -241,9 +241,11 @@ tags: [remove-input]
 excerpt(protocol._choi_observables, """\
         conj = stim.PauliString([gen[qubit] for qubit in output])
         records = [stim.target_rec(-1)]
+        # Read once: Stim recounts the whole circuit on every access.
+        measured = out.num_measurements
         for index, pauli in frame.items():
             if not pauli.commutes(conj):
-                records.append(stim.target_rec(index - out.num_measurements))
+                records.append(stim.target_rec(index - measured))
         out.append("OBSERVABLE_INCLUDE", records, observable)
 """)
 ```

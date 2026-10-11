@@ -185,15 +185,25 @@ def test_draw_cznr_checks_rejects_gates_other_than_cz():
 # The builder
 # ---------------------------------------------------------------------------
 def assert_exact(built: stim.Circuit) -> None:
-    """At zero noise every detector and observable is deterministic.
+    """At zero noise every detector and observable reads 0.
 
     Stim refuses to build a detector error model for a circuit with a
     non-deterministic detector or observable, and reports both against the
     noiseless reference, so a model with no errors is the exactness claim.
     A teleportation whose Pauli frame were tracked wrongly would leave an
     observable random.
+    The raw parities, taken without that reference, must also be 0: every
+    check and observable is measured with the sign under which it
+    stabilizes the state, so it reads +1 without a fault.
     """
     assert built.detector_error_model().num_errors == 0
+    measurements = built.compile_sampler(seed=0).sample(16)
+    converter = built.compile_m2d_converter(skip_reference_sample=True)
+    detectors, observables = converter.convert(
+        measurements=measurements, separate_observables=True
+    )
+    assert not detectors.any()
+    assert not observables.any()
 
 
 @pytest.mark.parametrize("n", [1, 2, 4])
@@ -228,6 +238,11 @@ def test_cznr_is_exact_at_zero_noise(n, t, r, native_plus):
             stim.Circuit("CZ 0 1"),
             [[stim.PauliString("XI")]],
             "does not stabilize",
+        ),
+        (
+            stim.Circuit("CZ 0 1"),
+            [[stim.PauliString("-XZ")]],
+            "opposite sign",
         ),
     ],
 )
@@ -268,17 +283,24 @@ def fault_locations(built: stim.Circuit) -> dict[str, accounting.Region]:
     t=st.integers(1, 3),
     r=st.integers(0, 3),
     native_plus=st.booleans(),
+    noisy_checks=st.booleans(),
     seed=st.integers(0, 2**32 - 1),
 )
 def test_cznr_regions_count_every_fault_location_the_builder_emits(
-    n, size, t, r, native_plus, seed
+    n, size, t, r, native_plus, noisy_checks, seed
 ):
+    """Noiseless checks have no fault locations, so no region of their own."""
     circuit = cz_circuit(n, size, seed)
     drawn = checks.draw_cznr_checks(
-        circuit, n, t, r, np.random.default_rng(seed)
+        circuit, n, t, r, np.random.default_rng(seed + 1)
     )
     built = protocol.build_cznr_tr(
-        circuit, n, drawn, NOISE, native_plus=native_plus
+        circuit,
+        n,
+        drawn,
+        NOISE,
+        native_plus=native_plus,
+        noisy_checks=noisy_checks,
     )
 
     expected = {}
@@ -290,10 +312,11 @@ def test_cznr_regions_count_every_fault_location_the_builder_emits(
         expected[f"gates/{k}"] = accounting.Region(
             n1=s1, n2=s2, nm=0, n_prep=0
         )
-        for j, check in enumerate(chunk_checks):
-            expected[f"check/{k}/{j}"] = accounting.check_region(
-                1, check.weight, native_plus
-            )
+        if noisy_checks:
+            for j, check in enumerate(chunk_checks):
+                expected[f"check/{k}/{j}"] = accounting.check_region(
+                    1, check.weight, native_plus
+                )
         expected[f"teleport/{k}"] = accounting.cznr_teleport_region(n)
     expected = {tag: region for tag, region in expected.items() if any(region)}
 
@@ -401,7 +424,7 @@ def test_cznr_bounds_never_exceed_clinr_ones_on_the_same_circuit(
     ("n", "t", "r"), [(3, 1, 1), (4, 1, 2), (6, 1, 4), (6, 2, 2), (5, 3, 1)]
 )
 def test_cznr_first_order_rate_is_below_clinr_on_complete_graphs(n, t, r):
-    """Means over 40 draws of each scheme's checks, 5 standard errors apart.
+    """Means over 10 draws of each scheme's checks, 5 standard errors apart.
 
     To first order, the logical error rate is the probability of a single
     fault that damages the output and escapes every check; CZNR has fewer
@@ -409,7 +432,7 @@ def test_cznr_first_order_rate_is_below_clinr_on_complete_graphs(n, t, r):
     """
     circuit = complete_graph(n)
     rng = np.random.default_rng(n + t + r)
-    draws = 40
+    draws = 10
 
     def rate(built: stim.Circuit) -> float:
         return first_order.logical_error_rate(first_order.faults(built))

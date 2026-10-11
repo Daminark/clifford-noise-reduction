@@ -175,7 +175,7 @@ def test_chunk_circuit_rejects_invalid_sizes(n, t, message):
 
 
 def test_chunk_circuit_rejects_a_circuit_wider_than_n():
-    with pytest.raises(ValueError, match="exceeding n = 2"):
+    with pytest.raises(ValueError, match=r"outside \[0, n\) for n = 2"):
         protocol.chunk_circuit(stim.Circuit("CX 0 2"), 2, 1)
 
 
@@ -209,9 +209,8 @@ def test_stabilizer_gens_generate_the_stabilizer_group_of_the_resource(
     simulator.do(resource)
 
     assert len(gens) == 2 * n
-    assert all(
-        abs(simulator.peek_observable_expectation(gen)) == 1 for gen in gens
-    )
+    # Each generator stabilizes the resource with its sign.
+    assert all(simulator.peek_observable_expectation(gen) == 1 for gen in gens)
     # Raises unless the 2n generators commute and are independent.
     stim.Tableau.from_stabilizers(gens)
 
@@ -251,13 +250,23 @@ def test_stabilizer_gens_rejects_a_layout_that_does_not_fit_the_tableau(
 # build_clinr_tr and build_direct
 # ---------------------------------------------------------------------------
 def assert_exact(built: stim.Circuit) -> None:
-    """At zero noise every detector and observable is deterministic.
+    """At zero noise every detector and observable reads 0.
 
     Stim refuses to build a detector error model for a circuit with a
     non-deterministic detector or observable, and reports both against the
     noiseless reference, so a model with no errors is the exactness claim.
+    The raw parities, taken without that reference, must also be 0: every
+    check and observable is measured with the sign under which it
+    stabilizes the state, so it reads +1 without a fault.
     """
     assert built.detector_error_model().num_errors == 0
+    measurements = built.compile_sampler(seed=0).sample(16)
+    converter = built.compile_m2d_converter(skip_reference_sample=True)
+    detectors, observables = converter.convert(
+        measurements=measurements, separate_observables=True
+    )
+    assert not detectors.any()
+    assert not observables.any()
 
 
 @pytest.mark.parametrize("t", [1, 2, 3])
@@ -370,11 +379,22 @@ def test_builder_rejects_a_check_that_does_not_stabilize_the_resource():
         protocol.build_clinr_tr(circuit, 2, drawn, NOISELESS)
 
 
+def test_builder_rejects_a_stabilizer_of_the_wrong_sign():
+    """A generator with its sign flipped commutes with every stabilizer."""
+    circuit = seeded_circuit(2, 10, seed=3)
+    gen = protocol.stabilizer_gens(
+        full_tableau(circuit, 2), [0, 1], [2, 3], 4
+    )[0]
+
+    with pytest.raises(ValueError, match="opposite sign"):
+        protocol.build_clinr_tr(circuit, 2, [[-gen]], NOISELESS)
+
+
 def test_direct_builder_rejects_n_below_one():
     with pytest.raises(ValueError, match="n must be at least 1"):
         protocol.build_direct(stim.Circuit(), 0, NOISELESS)
 
 
 def test_direct_builder_rejects_a_circuit_wider_than_n():
-    with pytest.raises(ValueError, match="exceeding n = 1"):
+    with pytest.raises(ValueError, match=r"outside \[0, n\) for n = 1"):
         protocol.build_direct(stim.Circuit("CX 0 1"), 1, NOISELESS)
