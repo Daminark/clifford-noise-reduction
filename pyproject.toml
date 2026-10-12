@@ -10,7 +10,7 @@ authors = [{ name = "Amin Idelhaj" }]
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.14"
+requires-python = ">=3.13"     # SPEC 0's floor at release, tested in CI
 dependencies = [
     "numpy>=2.5.1",
     "scipy>=1.18.1",

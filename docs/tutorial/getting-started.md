@@ -17,7 +17,7 @@ Everything runs in a few seconds, and every result comes from one seeded generat
 
 ## Install
 
-The package needs Python 3.14 or later and is not on PyPI; install it from GitHub:
+The package needs Python 3.13 or later and is not on PyPI; install it from GitHub:
 
 ```bash
 pip install git+https://github.com/Daminark/clifford-noise-reduction

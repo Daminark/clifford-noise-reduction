@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Daminark/clifford-noise-reduction/actions/workflows/ci.yml/badge.svg)](https://github.com/Daminark/clifford-noise-reduction/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://daminark.github.io/clifford-noise-reduction)
-[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
 [![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 
 An implementation in [Stim](https://github.com/quantumlib/Stim) of Clifford Noise Reduction (CliNR), the scheme of Delfosse and Tham ([arXiv:2407.06583](https://arxiv.org/abs/2407.06583)), and a simulation study of it.
@@ -17,7 +17,7 @@ An earlier version, with one chunk, was listed as a top project of the Erdős In
 
 ## Installation
 
-The package needs Python 3.14 or later and is installed from GitHub:
+The package needs Python 3.13 or later and is installed from GitHub:
 
 ```bash
 pip install git+https://github.com/Daminark/clifford-noise-reduction

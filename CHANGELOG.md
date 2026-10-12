@@ -19,6 +19,7 @@ It replaces the earlier demonstration of the scheme with one chunk, which had no
 - `clinr.circuits` and `clinr.noise_models`: random circuits, and the noise models of the paper and of the experiments.
 - Four experiments, each one script writing one results file: the regret of choosing by the bounds, how tight the bounds are, when CliNR pays off, and when CZNR pays off on dense blocks of `CZ` gates.
 - A simulation of how often the interval on the logical error rate covers, `scripts/coverage.py`, writing `results/coverage.json`.
+- Support for Python 3.13 and later, the floor that SPEC 0 sets at this release; CI runs the tests on 3.13 and on 3.14.
 - Documentation: a tutorial, how-to guides, explanations of the scheme, the bounds and every result, decision records, and the API reference.
 
 ### Results

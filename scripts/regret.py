@@ -142,7 +142,7 @@ def _git(*args: str) -> str | None:
             check=True,
             cwd=Path(__file__).resolve().parent,
         )
-    except OSError, subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         return None
     return done.stdout.strip()
 
