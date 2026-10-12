@@ -25,7 +25,7 @@ uv run python scripts/dense.py
 | `scripts/dense.py`     | `results/dense.json.gz`  | {doc}`../explanation/dense`                                  | `d05e2a4`     | 1.7 h  |
 
 The times are for one machine with 16 CPUs; `regret.py`, `payoff.py` and `dense.py` take `--workers`, the number of processes, which defaults to the number of CPUs.
-A script saves as it goes and resumes from its results file, so it can be stopped and started again.
+A script saves as it goes and resumes from its results file, so it can be stopped and started again at the same commit; it refuses to resume a file begun at another.
 `--quick` runs a small configuration, writing a separate file, to check a script before a full run; `sharpness.py --quick` reads the quick results of `regret.py`.
 
 The circuits of `regret.py` and of the curves of `payoff.py` are random Cliffords from Stim's sampler, which takes no seed, so a rerun draws new circuits and reproduces the results statistically rather than exactly.
@@ -42,5 +42,5 @@ The pages are executed when the site is built, and the build caches each page by
 
 ## Check which code produced a file
 
-Each results file records, under `runs`, the commit it was run at, whether the work tree had uncommitted changes, the versions of Python, the package, Stim and NumPy, and the platform.
+Each results file records, under `runs`, the commit it was run at, whether the work tree had uncommitted changes or untracked files outside `results/`, the versions of Python, the package, Stim and NumPy, and the platform.
 The commits since each of the runs above add code without changing what the scripts compute: readers of the results files, the CZNR variant, tags on noise channels, refactors that leave the bounds' values unchanged, and checks and readouts measured with their signs, which leaves every circuit's detector error model and seeded samples unchanged.

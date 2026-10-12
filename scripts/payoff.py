@@ -262,6 +262,7 @@ class Results:
                     f"{path} was made with other settings; "
                     "move it or pass --output"
                 )
+            regret.check_resume(self.data, path)
         else:
             self.data = {
                 "experiment": experiment,

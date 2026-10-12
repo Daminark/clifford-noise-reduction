@@ -1,5 +1,6 @@
 """The experiment scripts, run on their small grids."""
 
+import gzip
 import importlib.util
 import json
 import math
@@ -116,6 +117,58 @@ def test_regret_refuses_a_file_made_with_other_settings(regret_run, tmp_path):
         regret.main(["--quick", "--output", str(path), "--workers", "1"])
 
 
+# A commit other than any this repository's tests run at.
+OTHER_COMMIT = "0" * 40
+
+
+def from_another_commit(data: dict[str, Any]) -> dict[str, Any]:
+    """Return ``data`` with its first run recorded at another commit."""
+    data["runs"][0]["provenance"]["commit"] = OTHER_COMMIT
+    return data
+
+
+def test_regret_refuses_to_resume_a_run_from_another_commit(
+    regret_run, tmp_path
+):
+    regret = _load("regret")
+    path = copy_of(regret_run, tmp_path)
+    data = from_another_commit(json.loads(path.read_text(encoding="utf-8")))
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=f"run at commit {OTHER_COMMIT}"):
+        regret.main(["--quick", "--output", str(path), "--workers", "1"])
+
+
+def test_check_resume_accepts_runs_at_the_current_commit():
+    regret = _load("regret")
+    current = regret._git("rev-parse", "HEAD")
+    data = {"runs": [{"provenance": {"commit": current}}] * 2}
+
+    regret.check_resume(data, Path("results.json"))
+
+
+def test_provenance_counts_untracked_files_outside_results(monkeypatch):
+    """The status is read over the whole tree except results/."""
+    regret = _load("regret")
+    calls = []
+
+    def git(*args: str) -> str:
+        calls.append(args)
+        return "?? notes.txt" if args[0] == "status" else "abc"
+
+    monkeypatch.setattr(regret, "_git", git)
+
+    assert regret.provenance()["uncommitted_changes"] is True
+    status = next(call for call in calls if call[0] == "status")
+    assert status == (
+        "status",
+        "--porcelain",
+        "--",
+        ":(top)",
+        ":(top,exclude)results",
+    )
+
+
 def test_sharpness_quick_run_records_every_point_and_resumes(
     regret_run, tmp_path
 ):
@@ -180,6 +233,20 @@ def test_sharpness_refuses_a_file_made_from_other_results(
     )
 
     with pytest.raises(SystemExit, match="other regret results"):
+        sharpness.main(arguments)
+
+
+def test_sharpness_refuses_to_resume_a_run_from_another_commit(
+    regret_run, tmp_path
+):
+    sharpness = _load("sharpness")
+    path = tmp_path / "sharpness.json"
+    arguments = ["--quick", "--regret", str(regret_run), "--output", str(path)]
+    sharpness.main(arguments)
+    data = from_another_commit(json.loads(path.read_text(encoding="utf-8")))
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=f"run at commit {OTHER_COMMIT}"):
         sharpness.main(arguments)
 
 
@@ -276,6 +343,23 @@ def test_payoff_quick_run_records_every_unit_and_resumes(tmp_path):
 )
 def test_payoff_takes_at_least_one_check(size, n, r):
     assert _load("payoff").rule_r(size, n) == r
+
+
+def test_payoff_results_resume_only_at_the_commit_they_began(tmp_path):
+    payoff = _load("payoff")
+    path = tmp_path / "payoff.json.gz"
+    config = payoff.QUICK
+    payoff.Results(path, config)
+    payoff.Results(path, config)
+    data = payoff.load(path)
+    assert len(data["runs"]) == 2
+
+    path.write_bytes(
+        gzip.compress(json.dumps(from_another_commit(data)).encode())
+    )
+
+    with pytest.raises(SystemExit, match=f"run at commit {OTHER_COMMIT}"):
+        payoff.Results(path, config)
 
 
 def test_dense_quick_run_records_every_unit_and_resumes(tmp_path):

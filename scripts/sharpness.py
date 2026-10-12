@@ -402,6 +402,7 @@ def run(config: Config, source: Path, path: Path) -> None:
                 f"{path} was made with other settings or other regret "
                 "results; move it or pass --output"
             )
+        regret.check_resume(data, path)
     else:
         data = {
             "experiment": "sharpness",

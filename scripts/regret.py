@@ -158,8 +158,14 @@ def _processor() -> str:
 
 
 def provenance() -> dict[str, Any]:
-    """Return the versions, commit and platform the run used."""
-    status = _git("status", "--porcelain", "--untracked-files=no")
+    """Return the versions, commit and platform the run used.
+
+    Uncommitted changes include untracked files, except under
+    ``results/``, where a run's own output is untracked until committed.
+    """
+    status = _git(
+        "status", "--porcelain", "--", ":(top)", ":(top,exclude)results"
+    )
     return {
         "commit": _git("rev-parse", "HEAD"),
         "uncommitted_changes": None if status is None else bool(status),
@@ -262,6 +268,25 @@ def measured(
     return rate, overhead
 
 
+def check_resume(data: dict[str, Any], path: Path) -> None:
+    """Refuse to extend a results file that a run at another commit began.
+
+    Raises
+    ------
+    SystemExit
+        If a run recorded in ``data`` was at a commit other than the
+        current one.
+    """
+    current = _git("rev-parse", "HEAD")
+    earlier = {run.get("provenance", {}).get("commit") for run in data["runs"]}
+    others = sorted(str(commit) for commit in earlier - {current})
+    if others:
+        raise SystemExit(
+            f"{path} was run at commit {', '.join(others)}, not {current}; "
+            "resume it at that commit, or pass --output"
+        )
+
+
 Pick = list[int] | str | None
 
 
@@ -344,6 +369,7 @@ class Run:
                     f"{path} was made with other settings; "
                     "move it or pass --output"
                 )
+            check_resume(self.data, path)
         else:
             self.data = {
                 "experiment": "regret",
