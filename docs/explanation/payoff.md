@@ -104,6 +104,9 @@ for regime in rates:
                 name = key(regime, int(budget), family, n)
                 glue(f"gain_{name}", gain(outcomes), display=False)
                 glue(f"fits_{name}", len(fitted(outcomes)), display=False)
+# The largest gain of a size under the Forte-like rates, at a budget of 4.
+forte_gains = [gain(cell("curves", "forte-like", 4.0, family, n)) for family in families for n in sizes["forte-like"]]
+glue("forte_peak", float(np.nanmax(forte_gains)), display=False)
 for n in sizes["paper"]:
     glue(key("s", n), int(np.median([row["s"] for row in cell("curves", "paper", 4.0, "uniform", n)])), display=False)
 for regime in rates:
@@ -470,4 +473,4 @@ The measurements alone fault with probability {glue:text}`teleport_measurement:.
 This leans on the split of state preparation and measurement error assumed in {doc}`families`, which places most of it on measurement; error moved to preparation would fall where the checks can catch it, and CliNR would do better.
 
 Thus, under the paper's rates, this implementation reproduces the shape of the paper's two figures and the scaling of its Theorem 2, with gains larger than the paper reports.
-Under the Forte-like rates, CliNR with the paper's rule pays off only for circuits of about $n^2$ gates or more on 10 to 15 qubits, at a budget of 4, and by a factor of at most about 1.6.
+Under the Forte-like rates, CliNR with the paper's rule pays off only for circuits of about $n^2$ gates or more on 10 to 15 qubits, at a budget of 4, and by a gain of at most {glue:text}`forte_peak:.1f` at any size.

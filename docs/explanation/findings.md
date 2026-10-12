@@ -21,11 +21,11 @@ So choosing by the bounds loses little with uniform checks, a regret of {glue:te
 On random Clifford circuits under the paper's rule, CliNR reproduces the shape of the paper's Fig. 2 and Fig. 4 with larger gains.
 At matched circuit size the gain is {glue:text}`payoff.md::gain_paper_2_restricted_20:.1f` against the paper's 2 at $p_2 = 10^{-3}$, and {glue:text}`payoff.md::gain_paper_1e_4_2_restricted_50:.1f` against its 4 at $10^{-4}$.
 The reach of CliNR scales as Theorem 2 predicts once the budget forces several chunks, and nearly as $1/p$ while one chunk fits.
-At Forte-like rates CliNR pays off only for circuits of about $n^2$ gates or more on 10 to 15 qubits, at an overhead of 4, by at most {glue:text}`payoff.md::gain_forte_like_4_uniform_15:.1f` ({doc}`payoff`).
+At Forte-like rates CliNR pays off only for circuits of about $n^2$ gates or more on 10 to 15 qubits, at an overhead of 4, with a gain, the median over the circuits of a size, of at most {glue:text}`payoff.md::forte_peak:.1f` ({doc}`payoff`).
 
 ## CZNR on blocks of CZ gates
 
 At the same parameters, CZNR's bounds are below CliNR's on every circuit of `CZ` gates, and so, averaged over the checks, is its logical error rate to first order ({doc}`cznr`); on complete graphs it stays ahead well past first order.
 At an overhead of 4 and $p_2 = 10^{-4}$, CliNR's rate with uniform checks is {glue:text}`dense.md::ratio_paper_1e_4_uniform_low:.2f` to {glue:text}`dense.md::ratio_paper_1e_4_uniform_high:.2f` times CZNR's.
 CZNR reproduces the paper's Fig. 7 at $p_2 = 10^{-4}$, and at $10^{-3}$ only between $n = 15$ and $25$, with $|+\rangle$ prepared natively.
-At Forte-like rates it is the one scheme that pays off on these circuits, by up to {glue:text}`dense.md::best_forte_like_4_cznr:.1f`, against CliNR's best of {glue:text}`payoff.md::gain_forte_like_4_uniform_15:.1f` on random Clifford circuits ({doc}`dense`).
+At Forte-like rates it is the one scheme that pays off on these circuits, by a gain of up to {glue:text}`dense.md::best_forte_like_4_cznr:.1f` at a size, against at most {glue:text}`payoff.md::forte_peak:.1f` for CliNR on random Clifford circuits ({doc}`dense`).

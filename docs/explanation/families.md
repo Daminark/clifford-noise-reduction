@@ -120,8 +120,9 @@ cells = [
 glue("full_cells", len(cells), display=False)
 glue("unanimous", sum(circuits_per_size in pair for pair in cells), display=False)
 gains = [
-    1 - median("best_pair", "forte-like", 2.0, family, n) / median("direct", "forte-like", 2.0, family, n)
-    for family in families for n in sizes
+    1 - row["best_pair"] / row["direct"]
+    for row in rows
+    if row["regime"] == "forte-like" and row["ceiling"] == 2.0 and not np.isnan(row["best_pair"])
 ]
 glue("forte_gain", max(gains), display=False)
 glue("restricted_cases", bound_direct["restricted", True] + bound_direct["restricted", False], display=False)
@@ -192,7 +193,7 @@ At $n = 8$ the two are even, uniform checks lower on {glue:text}`uniform_wins_pa
 
 The Forte-like regime shows the same crossover at a different place.
 At an overhead of 4, uniform checks win at $n = 3$ and $8$ and restricted ones at $n = 15$ and $25$, on every circuit in each case; at $n = 15$, for instance, {glue:text}`restricted_forte_like_4_15:.3f` against {glue:text}`uniform_forte_like_4_15:.3f`, with the direct implementation at {glue:text}`direct_forte_like_4_15:.3f`.
-At an overhead of 2, no pair improves on the direct implementation by more than {glue:text}`forte_gain:.0%` of its rate.
+At an overhead of 2, the best pair improves on the direct implementation by at most {glue:text}`forte_gain:.0%` of its rate on any circuit.
 
 Two features of the comparison make it robust.
 Both families run on the same circuits, so the comparison is paired, and in {glue:text}`unanimous` of the {glue:text}`full_cells` cells where every circuit admits a pair for both families, one family is lower on every circuit.
