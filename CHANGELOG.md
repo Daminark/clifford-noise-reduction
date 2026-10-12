@@ -24,3 +24,4 @@ It replaces the earlier demonstration of the scheme with one chunk, which had no
 
 Each results file records the commit it was run at: `results/regret.json` at `75d16fc`, `results/sharpness.json` at `e80d396`, `results/payoff.json.gz` at `84d7157` and `results/dense.json.gz` at `d05e2a4`.
 The commits since change nothing the results depend on: they add readers of the results files, code that the experiments do not run, refactors that leave the bounds' values unchanged, and signed checks and readouts, which leave every circuit's detector error model and seeded samples unchanged.
+The pages of `payoff.py` and `dense.py` state how many of the chosen pairs their fresh estimates show over budget, and by how much at most.

@@ -119,6 +119,24 @@ for name, unit in data["units"].items():
         widths.append((high - low) / 2 / rate)
 glue("width_median", float(np.median(widths)), display=False)
 glue("width_max", float(np.max(widths)), display=False)
+
+# The chosen pairs whose fresh estimate is over the budget the pilot met.
+chosen, over = 0, []
+for name, unit in data["units"].items():
+    part, regime, n, alpha, c, family = name.split("/")
+    for budget, t in unit["choice"].items():
+        if t is None:
+            continue
+        chosen += 1
+        draws = regret.estimates_of(unit["estimates"][str(t)], int(n), regret.FAMILIES[family])
+        overhead, low, _ = estimators.gate_overhead_over_draws(draws)
+        if overhead > float(budget):
+            over.append((overhead / float(budget) - 1, low <= float(budget)))
+glue("chosen", f"{chosen:,}", display=False)
+glue("over", len(over), display=False)
+glue("over_worst", max(excess for excess, _ in over), display=False)
+glue("over_within", sum(within for _, within in over), display=False)
+glue("over_beyond", sum(not within for _, within in over), display=False)
 for part in ("curves", "maps"):
     counts = [record["errors"] for case, record in data["direct"].items() if case.startswith(part)]
     glue(f"direct_errors_{part}", min(counts), display=False)
@@ -137,6 +155,8 @@ The third is the Forte-like regime of {doc}`families`: $p_1 = 2 \times 10^{-4}$,
 
 CliNR's parameters follow the paper's rule (Fig. 2): $r = \lfloor \log_2(s/n) \rfloor$ checks, at least 1 since the paper takes $r \ge 1$, and the smallest $t$, up to {glue:text}`t_max`, whose gate overhead is within a budget of 2 or of 4.
 The overhead of each $t$ is judged by a pilot estimate over {glue:text}`pilot_draws` draws of the checks of {glue:text}`pilot_shots` shots each, and the chosen pair is then estimated afresh over {glue:text}`draws` draws of {glue:text}`shots` shots.
+Judged by these fresh estimates, {glue:text}`over` of the {glue:text}`chosen` chosen pairs are over their budget, by at most {glue:text}`over_worst:.1%`, since a pilot over few draws can fall within the budget at a $t$ just over it, and the first $t$ to fall within is more likely one whose pilot fell low.
+The budget lies inside the fresh estimate's 95% interval for {glue:text}`over_within` of them, where the excess is within that estimate's own uncertainty, and below it for {glue:text}`over_beyond`.
 The direct implementation is estimated with {glue:text}`direct_shots` shots.
 Both families of checks are run on the same circuits.
 
