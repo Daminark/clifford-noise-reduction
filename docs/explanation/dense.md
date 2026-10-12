@@ -149,8 +149,8 @@ Four schemes run on each block, every one by the paper's rule as in {doc}`payoff
 - **CliNR with restricted checks**, the family of the paper's own CliNR numerics.
 
 A chosen pair is estimated afresh over {glue:text}`draws` draws of {glue:text}`shots` shots, and the direct implementation over {glue:text}`direct_shots` shots.
-Judged by these fresh estimates, {glue:text}`over` of the {glue:text}`chosen` chosen pairs are over their budget, by at most {glue:text}`over_worst:.1%`, since a pilot over few draws can fall within the budget at a $t$ just over it, and the first $t$ to fall within is more likely one whose pilot fell low.
-The budget lies inside the fresh estimate's 95% interval for {glue:text}`over_within` of them, where the excess is within that estimate's own uncertainty, and below it for {glue:text}`over_beyond`.
+Judged by their fresh estimates, {glue:text}`over` of the {glue:text}`chosen` chosen pairs are over their budget, by at most {glue:text}`over_worst:.1%`, since a pilot over few draws can fall within the budget at a $t$ just over it, and the first $t$ to fall within is more likely one whose pilot fell low.
+The budget lies inside the fresh estimate's 95% interval for {glue:text}`over_within` of them, where the excess is within that estimate's own uncertainty; the interval lies wholly above it for the remaining {glue:text}`over_beyond`.
 Every rate is a logical error rate per run of the circuit, and a scheme's *gain* is the direct implementation's rate over its own.
 The 95% interval of a single estimate has a median half-width of {glue:text}`width_median:.0%` of the rate, and at most {glue:text}`width_max:.0%`; every direct estimate counts at least {glue:text}`direct_errors` logical errors.
 There is one circuit per size, so these intervals are the whole of the statistical uncertainty.

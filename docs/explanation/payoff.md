@@ -155,10 +155,10 @@ The third is the Forte-like regime of {doc}`families`: $p_1 = 2 \times 10^{-4}$,
 
 CliNR's parameters follow the paper's rule (Fig. 2): $r = \lfloor \log_2(s/n) \rfloor$ checks, at least 1 since the paper takes $r \ge 1$, and the smallest $t$, up to {glue:text}`t_max`, whose gate overhead is within a budget of 2 or of 4.
 The overhead of each $t$ is judged by a pilot estimate over {glue:text}`pilot_draws` draws of the checks of {glue:text}`pilot_shots` shots each, and the chosen pair is then estimated afresh over {glue:text}`draws` draws of {glue:text}`shots` shots.
-Judged by these fresh estimates, {glue:text}`over` of the {glue:text}`chosen` chosen pairs are over their budget, by at most {glue:text}`over_worst:.1%`, since a pilot over few draws can fall within the budget at a $t$ just over it, and the first $t$ to fall within is more likely one whose pilot fell low.
-The budget lies inside the fresh estimate's 95% interval for {glue:text}`over_within` of them, where the excess is within that estimate's own uncertainty, and below it for {glue:text}`over_beyond`.
 The direct implementation is estimated with {glue:text}`direct_shots` shots.
 Both families of checks are run on the same circuits.
+Judged by their fresh estimates, {glue:text}`over` of the {glue:text}`chosen` chosen pairs are over their budget, by at most {glue:text}`over_worst:.1%`, since a pilot over few draws can fall within the budget at a $t$ just over it, and the first $t$ to fall within is more likely one whose pilot fell low.
+The budget lies inside the fresh estimate's 95% interval for {glue:text}`over_within` of them, where the excess is within that estimate's own uncertainty; the interval lies wholly above it for the remaining {glue:text}`over_beyond`.
 
 The experiment has two parts.
 The *curves* take {glue:text}`circuits` random Clifford circuits at each size from {func}`clinr.circuits.random_clifford`, as the paper does, at $n = 5, 10, 15, \dots$, in steps of 10 beyond $n = 80$, until the direct implementation's bound on the median circuit, which is nearly exact ({doc}`regret`), reaches $0.9$.
