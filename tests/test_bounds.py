@@ -454,6 +454,19 @@ def test_choose_tr_recommends_the_direct_implementation_when_it_is_best():
     )
 
 
+def test_fault_probability_keeps_its_precision_at_tiny_rates():
+    """Two gates at 1e-17 fault with probability 2e-17 - 1e-34.
+
+    ``1 - (1 - p)^2`` would give exactly 0, since ``1 - 1e-17`` rounds to 1.
+    """
+    circuit = stim.Circuit("H 0\nS 0")
+    tiny = noise_models.NoiseModel(p1=1e-17, p2=0.0, p_m=0.0, p_prep=0.0)
+
+    assert bounds.direct_plog_bound(circuit, tiny) == pytest.approx(
+        2e-17, rel=1e-15
+    )
+
+
 def test_bounds_are_infinite_when_no_attempt_can_succeed():
     circuit = seeded_circuit(2, 10, seed=0)
     certain_fault = noise_models.uniform_noise(1.0)

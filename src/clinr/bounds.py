@@ -67,9 +67,24 @@ def _no_fault_prob(noise: NoiseModel, region: Region) -> float:
 def _fault_prob(noise: NoiseModel, region: Region) -> float:
     """Return the probability that some operation of ``region`` faults.
 
-    The paper's ``g_p(x) = 1 - (1 - p)^x``, with one rate per kind.
+    The paper's ``g_p(x) = 1 - (1 - p)^x``, with one rate per kind,
+    computed as ``-expm1(sum x log1p(-p))`` so that it keeps its relative
+    precision at rates far below machine epsilon.
     """
-    return 1.0 - _no_fault_prob(noise, region)
+    assert min(region) >= 0, f"negative counts in {region}"
+    kinds = [
+        (rate, count)
+        for rate, count in (
+            (noise.p1, region.n1),
+            (noise.p2, region.n2),
+            (noise.p_m, region.nm),
+            (noise.p_prep, region.n_prep),
+        )
+        if count
+    ]
+    if any(rate == 1.0 for rate, _ in kinds):
+        return 1.0  # log1p(-1) is undefined; a certain fault is certain
+    return -math.expm1(sum(count * math.log1p(-rate) for rate, count in kinds))
 
 
 class _Family(NamedTuple):
