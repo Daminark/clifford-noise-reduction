@@ -32,6 +32,7 @@ explanation/the-scheme
 explanation/circuits
 explanation/checks-and-bounds
 explanation/estimation
+explanation/coverage
 explanation/findings
 explanation/families
 explanation/regret

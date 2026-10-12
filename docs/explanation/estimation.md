@@ -119,10 +119,10 @@ How a variance becomes an interval depends on the quantity, since the gate overh
 
 ## The intervals
 
-The gate overhead is a ratio of means of operation counts, at least 1 and far from any boundary, and its variance does not depend on its value.
+The gate overhead is a sum of ratios of means, and each denominator, a chunk's mean acceptance, is estimated precisely relative to its size, so the ratio is nearly linear in the means over draws; Cochran's rule takes this to hold when each mean acceptance has a coefficient of variation below about 0.1.
 Its estimate is a smooth function of means over independent draws, so it is close to normal, and {func}`clinr.estimators.gate_overhead_over_draws` gives the Student $t$ interval with $J - 1$ degrees of freedom, which allows for a variance estimated from $J$ draws.
 
-The logical error rate is a proportion near zero, where neither holds: its distribution is lopsided, and its variance is tied to its value, so draws that see few errors also report a small variance.
+The logical error rate is a proportion near zero, where a normal approximation fails: its distribution is lopsided, and its variance is tied to its value, so draws that see few errors also report a small variance.
 For a proportion from a clustered sample, the standard interval is that of Korn and Graubard (Survey Methodology 24, 193 (1998)), which the NCHS data presentation standards for proportions adopt, and {func}`clinr.estimators.logical_error_rate` returns it.
 It converts the variance over draws into an *effective number of shots*, the number of independent shots whose binomial variance at the estimate would match it,
 

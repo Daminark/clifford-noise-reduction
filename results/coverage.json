@@ -1,0 +1,65 @@
+{
+ "experiment": "coverage",
+ "seed": 20261014,
+ "provenance": {
+  "commit": "1dc9b2648ac29b61821a4e99b75e35f547bb28f3",
+  "uncommitted_changes": false,
+  "python": "3.14.7",
+  "packages": {
+   "clifford-noise-reduction": "0.1.dev123+g1dc9b2648",
+   "stim": "1.16.0",
+   "numpy": "2.5.1"
+  },
+  "system": "Linux",
+  "release": "6.8.0-138-generic",
+  "machine": "x86_64",
+  "processor": "AMD Ryzen 7 9800X3D 8-Core Processor",
+  "cpus": 2
+ },
+ "scenarios": [
+  {
+   "name": "plentiful errors",
+   "rate": 0.02,
+   "sigma": 0.5,
+   "draws": 40,
+   "shots": 1000,
+   "replications": 10000,
+   "mean_errors": 798.3446,
+   "coverage": 0.9426,
+   "mcse": 0.0023260533097932217
+  },
+  {
+   "name": "few errors",
+   "rate": 0.0001,
+   "sigma": 0.5,
+   "draws": 10,
+   "shots": 1000,
+   "replications": 10000,
+   "mean_errors": 1.0041,
+   "coverage": 0.9902,
+   "mcse": 0.0009850867982061293
+  },
+  {
+   "name": "heavy spread",
+   "rate": 0.02,
+   "sigma": 1.5,
+   "draws": 10,
+   "shots": 1000,
+   "replications": 10000,
+   "mean_errors": 198.092,
+   "coverage": 0.8131,
+   "mcse": 0.003898312327148762
+  },
+  {
+   "name": "few errors, heavy spread",
+   "rate": 0.0001,
+   "sigma": 1.5,
+   "draws": 10,
+   "shots": 1000,
+   "replications": 10000,
+   "mean_errors": 1.018,
+   "coverage": 0.9954,
+   "mcse": 0.0006766712643522
+  }
+ ]
+}

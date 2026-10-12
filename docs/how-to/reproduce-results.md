@@ -11,6 +11,7 @@ Run each script from the repository root, in this order, since `sharpness.py` re
 uv sync --locked
 uv run python scripts/regret.py
 uv run python scripts/sharpness.py
+uv run python scripts/coverage.py
 uv run python scripts/payoff.py
 uv run python scripts/dense.py
 ```
@@ -19,6 +20,7 @@ uv run python scripts/dense.py
 | ---------------------- | ------------------------ | ------------------------------------------------------------ | ------------- | ------ |
 | `scripts/regret.py`    | `results/regret.json`    | {doc}`../explanation/families`, {doc}`../explanation/regret` | `75d16fc`     | 73 min |
 | `scripts/sharpness.py` | `results/sharpness.json` | {doc}`../explanation/sharpness`                              | `e80d396`     | 41 min |
+| `scripts/coverage.py`  | `results/coverage.json`  | {doc}`../explanation/coverage`                               | `1dc9b26`     | 8 s    |
 | `scripts/payoff.py`    | `results/payoff.json.gz` | {doc}`../explanation/payoff`                                 | `84d7157`     | 4.3 h  |
 | `scripts/dense.py`     | `results/dense.json.gz`  | {doc}`../explanation/dense`                                  | `d05e2a4`     | 1.7 h  |
 

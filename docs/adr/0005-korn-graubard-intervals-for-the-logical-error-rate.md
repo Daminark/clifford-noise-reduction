@@ -24,3 +24,10 @@ The gate overhead keeps the Student t interval: it is a ratio of means far from 
 The interval never collapses and stays within [0, 1], and with few draws or few errors it widens rather than undercovers; at about one expected error over 10 draws it covers in about 99% of trials, and with plentiful errors in about 95%.
 Clopper-Pearson is conservative, so with few effective shots the interval is wider than nominal.
 The point estimates are unchanged, so no result moves; the intervals quoted on the results pages change slightly.
+
+## Note, 2026-10-12
+
+The reason given above for keeping the Student t interval on the gate overhead is wrong: a ratio's variance does depend on its value.
+What justifies the interval is that each chunk's mean acceptance, a denominator, is estimated precisely relative to its size, so the ratio is nearly linear in the means over draws; Cochran's rule (Sampling Techniques, 3rd ed., ch. 6) takes this to hold when each mean acceptance has a coefficient of variation below about 0.1.
+The correction comes from the statistics audit of the experiments, which also asked that the interval's coverage be measured with its Monte Carlo errors; the decision is unchanged.
+That measurement is in {doc}`../explanation/coverage`.
