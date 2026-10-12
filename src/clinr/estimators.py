@@ -317,7 +317,12 @@ class Estimate:
         return math.nan if self.accepted == 0 else self.errors / self.accepted
 
     def interval(self, confidence: float = 0.95) -> tuple[float, float, float]:
-        """Return :func:`wilson_interval` of ``errors`` in ``accepted``."""
+        """Return :func:`wilson_interval` of ``errors`` in ``accepted``.
+
+        For CliNR or CZNR, the interval is for the rate given this
+        estimate's checks, not for the protocol's rate over draws of them,
+        which :func:`logical_error_rate` estimates.
+        """
         return wilson_interval(self.errors, self.accepted, confidence)
 
 

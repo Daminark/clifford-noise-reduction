@@ -54,7 +54,7 @@ for family, restricted in (("uniform", False), ("restricted", True)):
 A shot is accepted when every detector passes, and the draw's logical error rate is the fraction of accepted shots in which some observable flips.
 
 Given the checks, the shots are independent, so the draw's errors are binomial over its accepted shots.
-Its interval is the Wilson score interval, {func}`clinr.estimators.wilson_interval`, a standard one for a binomial proportion near zero.
+Its interval, for the rate given these checks rather than the protocol's rate over draws of them, is the Wilson score interval, {func}`clinr.estimators.wilson_interval`, a standard one for a binomial proportion near zero.
 There the Wald interval, the point estimate plus or minus a multiple of its standard error, leaves $[0, 1]$ and collapses to a point when no error is seen, since it takes the standard error at the estimate itself; the Wilson interval, which takes it at each candidate rate, does neither.
 
 For each chunk, the estimate also counts the shots that the chunk's own detectors accept.

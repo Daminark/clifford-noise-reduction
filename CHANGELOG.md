@@ -14,7 +14,7 @@ It replaces the earlier demonstration of the scheme with one chunk, which had no
 - `clinr.checks`: checks drawn uniformly from the resource state's stabilizer group, or for CliNR from the restricted family of the paper's numerics.
 - `clinr.bounds`: bounds on the logical error rate and the gate overhead, rederiving the paper's Theorems 1 and 3 with four error rates, and a choice of $(t, r)$ or the direct implementation by them.
 - `clinr.accounting`: the operation counts of each region of a built circuit, which the bounds and the estimators share.
-- `clinr.estimators`: estimates of the logical error rate and the gate overhead, over draws of the checks, with confidence intervals.
+- `clinr.estimators`: estimates of the logical error rate and the gate overhead, over draws of the checks, with confidence intervals; one draw's interval is for the rate given its checks.
 - `clinr.first_order`: every single fault of a built circuit, with its region and whether it is caught, and the logical error rate to first order.
 - `clinr.circuits` and `clinr.noise_models`: random circuits, and the noise models of the paper and of the experiments.
 - Four experiments, each one script writing one results file: the regret of choosing by the bounds, how tight the bounds are, when CliNR pays off, and when CZNR pays off on dense blocks of `CZ` gates.

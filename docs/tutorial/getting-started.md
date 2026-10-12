@@ -71,6 +71,7 @@ print(f"acceptance: {clinr.acceptance:.3f}")
 ```
 
 Notice that the logical error rate is well below the direct one, and that nearly every shot is accepted.
+With one draw of the checks, the interval is for the rate given these checks; the protocol draws new checks for every attempt, and {doc}`../how-to/repeated-draws` estimates its rate over many draws.
 The price is operations: the gate overhead is the expected number of operations per gate of the circuit, restarts included.
 
 ```{code-cell} python
