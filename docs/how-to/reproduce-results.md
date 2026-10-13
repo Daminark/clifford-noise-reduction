@@ -5,15 +5,17 @@ This guide reruns the scripts and rebuilds the pages from their output.
 
 ## Run the experiments
 
-Run each script from the repository root, in this order, since `sharpness.py` reads the results of `regret.py`:
+The repository carries the results of the runs in the table below, and a script will not extend a results file that a run at another commit began, so a rerun writes its files elsewhere with `--output`.
+Run each script from the repository root, in this order, since `sharpness.py` reads the results of `regret.py`, here through `--regret`:
 
 ```bash
 uv sync --locked
-uv run python scripts/regret.py
-uv run python scripts/sharpness.py
-uv run python scripts/coverage.py
-uv run python scripts/payoff.py
-uv run python scripts/dense.py
+mkdir -p results/rerun
+uv run python scripts/regret.py --output results/rerun/regret.json
+uv run python scripts/sharpness.py --regret results/rerun/regret.json --output results/rerun/sharpness.json
+uv run python scripts/coverage.py --output results/rerun/coverage.json
+uv run python scripts/payoff.py --output results/rerun/payoff.json.gz
+uv run python scripts/dense.py --output results/rerun/dense.json.gz
 ```
 
 | Script                 | Writes                   | Rendered by                                                  | Run at commit | Time   |
@@ -25,13 +27,24 @@ uv run python scripts/dense.py
 | `scripts/dense.py`     | `results/dense.json.gz`  | {doc}`../explanation/dense`                                  | `d05e2a4`     | 1.7 h  |
 
 The times are for one machine with 16 CPUs; `regret.py`, `payoff.py` and `dense.py` take `--workers`, the number of processes, which defaults to the number of CPUs.
-A script saves as it goes and resumes from its results file, so it can be stopped and started again at the same commit; it refuses to resume a file begun at another.
+`regret.py`, `sharpness.py`, `payoff.py` and `dense.py` save as they go and resume from their output file, so a run can be stopped and started again at the same commit.
+They refuse to resume a file begun at another commit or made with other settings, and `sharpness.py` also refuses one made from other regret results.
+`coverage.py` runs in seconds and overwrites its output file rather than resuming it.
+The files go under `results/` because a run records whether the work tree has uncommitted changes or untracked files outside it.
 `--quick` runs a small configuration, writing a separate file, to check a script before a full run; `sharpness.py --quick` reads the quick results of `regret.py`.
 
 The circuits of `regret.py` and of the curves of `payoff.py` are random Cliffords from Stim's sampler, which takes no seed, so a rerun draws new circuits and reproduces the results statistically rather than exactly.
 Everything else is seeded, and Stim reproduces seeded samples exactly only with the same version on the same machine.
 
 ## Rebuild the pages
+
+The pages read the files of the table under their names in `results/`, so they come to read a rerun's files once those replace them:
+
+```bash
+mv results/rerun/* results/
+```
+
+Then build the site:
 
 ```bash
 rm -rf docs/_build
