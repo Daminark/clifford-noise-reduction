@@ -18,3 +18,15 @@ wheels/
 
 # OS
 .DS_Store
+
+# Built documentation, with the notebook execution cache
+docs/_build/
+
+# Test artifacts
+.hypothesis/
+.coverage
+
+# Small runs of the experiment scripts, for checking them.
+results/*-quick.json
+results/*-quick.json.gz
+results/*.tmp

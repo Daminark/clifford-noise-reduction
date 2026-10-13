@@ -1,19 +1,141 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
 [project]
 name = "clifford-noise-reduction"
-version = "0.1.0"
+dynamic = ["version"]          # from the git tag, by hatch-vcs
 description = "Clifford Noise Reduction (CliNR) in Stim"
+authors = [{ name = "Amin Idelhaj" }]
 readme = "README.md"
-requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"     # SPEC 0's floor at release, tested in CI
 dependencies = [
-    "matplotlib>=3.11.0",
     "numpy>=2.5.1",
+    "scipy>=1.18.1",
     "stim>=1.16.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Daminark/clifford-noise-reduction"
+Documentation = "https://daminark.github.io/clifford-noise-reduction"
+Changelog = "https://github.com/Daminark/clifford-noise-reduction/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Daminark/clifford-noise-reduction/issues"
+
 [dependency-groups]
 dev = [
-    "ipykernel>=7.3.0",
+    { include-group = "docs" }, # to write and run the notebooks
+    "hypothesis>=6.168.3",
     "jupyterlab>=4.6.1",
-    "nbmake>=1.5.5",
-    "pytest>=9.1.1",
+    "jupytext>=1.19.5",
+    "mypy>=2.3.1",
+    "pytest>=9",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.8",
 ]
+docs = [
+    "furo>=2025.12.19",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.2",
+    "myst-nb>=1.4.0",
+    "numpydoc>=1.11.0",
+    "sphinx>=9.1.0",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clinr"]
+
+[tool.uv]
+# Rebuild the package when the commit or tags change, so its version is current.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+
+[tool.pytest]
+minversion = "9.0"             # the native table and strict need pytest 9
+addopts = [
+    "-ra",                     # summarize every outcome but passes
+    "--showlocals",            # print local variables in tracebacks
+    "--import-mode=importlib", # test the installed package, not src/
+]
+strict = true                  # unknown markers, config typos, passing xfails
+filterwarnings = ["error"]     # warnings, deprecations included, fail tests
+log_level = "INFO"             # captured logs shown on failure, from INFO up
+testpaths = ["tests"]
+markers = [
+    "slow: long-running tests, skipped unless --runslow is given",
+]
+
+[tool.coverage.run]
+source_pkgs = ["clinr"]
+branch = true                  # count untaken branches, not only lines
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 100               # the current level; raise it, never lower it
+
+[tool.mypy]
+files = ["src", "tests", "scripts"]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+# Tests are checked but need not be annotated; the package must be.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "clinr.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+# Stim ships stubs (__init__.pyi) without a py.typed marker; read them anyway.
+[[tool.mypy.overrides]]
+module = "stim"
+follow_untyped_imports = true
+
+# SciPy ships no type information; stubs exist as the separate scipy-stubs.
+[[tool.mypy.overrides]]
+module = "scipy.*"
+ignore_missing_imports = true
+
+[tool.codespell]
+# The ancilla's index, and the paper's second author.
+ignore-words-list = "anc,tham"
+
+[tool.mdformat]
+wrap = "keep"                  # line breaks are semantic, one per sentence
+number = true                  # number ordered lists 1, 2, 3 in the source
+
+[tool.repo-review]
+# Checks of the Scientific Python guide waived on purpose.
+ignore = [
+    "PC140", # mypy needs the locked environment, so CI runs it instead
+    "PC901", # PC901 to PC903 configure pre-commit.ci, which is not used:
+    "PC902", # CI runs pre-commit itself
+    "PC903",
+]
+
+[tool.ruff]
+line-length = 79               # PEP 8's limit, not ruff's default of 88
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, pytest style,
+# docstrings, NumPy, ruff's own rules, no print in the package, and pathlib.
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "PT", "D", "NPY", "RUF", "T20", "PTH",
+]
+# __all__ mirrors each module's definition order, which is itself ordered
+# by dependency; alphabetising it would lose that.
+ignore = ["RUF022"]
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name states the behavior it checks, so tests, test modules and the
+# tests package need no docstring; the docstrings that are written are checked.
+"tests/**" = ["D100", "D103", "D104"]
+# Experiment scripts are applications, and report progress by printing.
+"scripts/**" = ["T20"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

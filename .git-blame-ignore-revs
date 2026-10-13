@@ -1,0 +1,8 @@
+# Commits that only reformat, skipped by git blame and by GitHub's blame view.
+# Use locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format the tests and fix final newlines
+397a4b526583827b45daf7d6b0d785abf21dceeb
+
+# Format the docs pages with mdformat
+d4a3e7d3418c23ec3c4690632f3aea0c9627e3a0

@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below, and cite the paper it implements."
+title: "CliNR: Clifford Noise Reduction in Stim"
+type: software
+authors:
+  - given-names: Amin
+    family-names: Idelhaj
+    alias: Daminark
+    orcid: "https://orcid.org/0000-0001-5480-3237"
+repository-code: "https://github.com/Daminark/clifford-noise-reduction"
+url: "https://daminark.github.io/clifford-noise-reduction"
+license: MIT
+version: 0.1.0
+date-released: 2026-10-13
+keywords:
+  - quantum noise reduction
+  - Clifford circuits
+  - stabilizer simulation
+  - Stim
+references:
+  - type: article
+    authors:
+      - family-names: Delfosse
+        given-names: Nicolas
+      - family-names: Tham
+        given-names: Edwin
+    title: "Low-cost noise reduction for Clifford circuits"
+    journal: "Physical Review Letters"
+    volume: 134
+    start: "090603"
+    year: 2025
+    identifiers:
+      - type: other
+        value: "arXiv:2407.06583"
