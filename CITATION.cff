@@ -11,6 +11,7 @@ repository-code: "https://github.com/Daminark/clifford-noise-reduction"
 url: "https://daminark.github.io/clifford-noise-reduction"
 license: MIT
 version: 0.1.0
+date-released: 2026-10-13
 keywords:
   - quantum noise reduction
   - Clifford circuits
