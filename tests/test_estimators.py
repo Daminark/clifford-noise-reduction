@@ -1,5 +1,6 @@
 """Tests for the Monte Carlo estimators in ``clinr.estimators``."""
 
+import dataclasses
 import math
 from typing import Any
 
@@ -142,6 +143,14 @@ def test_wilson_interval_rejects_invalid_arguments(
         (
             {"n": 2, "restricted_checks": True, "chunk_weight": (7,)},
             "between 1 and 3 times",
+        ),
+        (
+            {"given_checks": True, "restricted_checks": True},
+            "cannot both be set",
+        ),
+        (
+            {"given_checks": True, "chunk_weight": (5,)},
+            "between 0 and 2 times",
         ),
     ],
 )
@@ -348,6 +357,131 @@ def test_cznr_estimate_passes_noiseless_checks_to_the_builder():
 
     assert estimate.noisy_checks is False
     assert estimate.chunk_accepted == (200,)
+
+
+# ---------------------------------------------------------------------------
+# Given checks
+# ---------------------------------------------------------------------------
+def test_given_checks_estimate_records_the_checks_it_was_given():
+    """At n = 1 every check has weight 2, so two per chunk weigh 4."""
+    circuit = stim.Circuit("H 0\nS 0")
+    chunks = protocol.chunk_circuit(circuit, 1, 2)
+    given = [
+        protocol.stabilizer_gens(chunk.to_tableau(), [0], [1], 2)
+        for chunk in chunks
+    ]
+
+    estimate = estimators.estimate_clinr_given(
+        circuit, 1, given, NOISELESS, 300, np.random.default_rng(0)
+    )
+
+    assert estimate == estimators.Estimate(
+        300,
+        300,
+        0,
+        2,
+        0,
+        1,
+        chunk_accepted=(300, 300),
+        chunk_checks=(2, 2),
+        chunk_weight=(4, 4),
+        chunk_counts=((1, 0), (1, 0)),
+        given_checks=True,
+    )
+
+
+@pytest.mark.parametrize("restricted_checks", [False, True])
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"noisy_checks": False, "native_plus": True}],
+    ids=["defaults", "noiseless-native"],
+)
+def test_clinr_estimate_with_its_own_drawn_checks_given_is_the_same_estimate(
+    restricted_checks, options
+):
+    """The generator draws the checks and then seeds the sampler."""
+    n, t, r = 3, 2, 2
+    circuit = seeded_circuit(n, 20, seed=1)
+    noise = noise_models.uniform_noise(2e-3)
+    drawn = estimators.estimate_clinr(
+        circuit,
+        n,
+        t,
+        r,
+        noise,
+        2000,
+        np.random.default_rng(4),
+        restricted_checks=restricted_checks,
+        **options,
+    )
+    rng = np.random.default_rng(4)
+    picked = checks.draw_checks(
+        circuit, n, t, r, rng, restricted_checks=restricted_checks
+    )
+
+    given = estimators.estimate_clinr_given(
+        circuit, n, picked, noise, 2000, rng, **options
+    )
+
+    assert given == dataclasses.replace(
+        drawn, restricted_checks=False, given_checks=True
+    )
+    assert estimators.gate_overhead(given) == estimators.gate_overhead(drawn)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"noisy_checks": False, "native_plus": True}],
+    ids=["defaults", "noiseless-native"],
+)
+def test_cznr_estimate_with_its_own_drawn_checks_given_is_the_same_estimate(
+    options,
+):
+    n, t, r = 4, 2, 2
+    circuit = stim.Circuit("CZ 0 1 1 2 0 2 0 1 2 3 1 3")
+    noise = noise_models.uniform_noise(2e-3)
+    drawn = estimators.estimate_cznr(
+        circuit, n, t, r, noise, 2000, np.random.default_rng(4), **options
+    )
+    rng = np.random.default_rng(4)
+    picked = checks.draw_cznr_checks(circuit, n, t, r, rng)
+
+    given = estimators.estimate_cznr_given(
+        circuit, n, picked, noise, 2000, rng, **options
+    )
+
+    assert given == dataclasses.replace(drawn, given_checks=True)
+    assert estimators.gate_overhead(given) == estimators.gate_overhead(drawn)
+
+
+def given_clinr(shots, rng):
+    circuit = seeded_circuit(2, 5, seed=0)
+    picked = checks.draw_checks(circuit, 2, 1, 1, np.random.default_rng(0))
+    return estimators.estimate_clinr_given(
+        circuit, 2, picked, NOISELESS, shots, rng
+    )
+
+
+def given_cznr(shots, rng):
+    circuit = stim.Circuit("CZ 0 1")
+    picked = checks.draw_cznr_checks(
+        circuit, 2, 1, 1, np.random.default_rng(0)
+    )
+    return estimators.estimate_cznr_given(
+        circuit, 2, picked, NOISELESS, shots, rng
+    )
+
+
+@pytest.mark.parametrize("estimate", [given_clinr, given_cznr])
+def test_given_checks_estimates_reject_a_shot_count_below_one(estimate):
+    with pytest.raises(ValueError, match="shots must be positive"):
+        estimate(0, np.random.default_rng(0))
+
+
+@pytest.mark.parametrize("estimate", [given_clinr, given_cznr])
+def test_given_checks_estimates_reject_a_legacy_random_state(estimate):
+    with pytest.raises(TypeError, match=r"numpy\.random\.Generator"):
+        estimate(10, np.random.RandomState(0))
 
 
 def test_estimate_interval_is_the_wilson_interval_of_its_counts():
@@ -739,6 +873,7 @@ def test_design_effect_is_undefined_when_no_draw_saw_an_error():
         ),
         ([draw(1, 900), draw(1, 900, noisy_checks=False)], "options disagree"),
         ([draw(1, 900), draw(1, 900, n=2)], "options disagree"),
+        ([draw(1, 900), draw(1, 900, given_checks=True)], "not a draw"),
     ],
 )
 @pytest.mark.parametrize(

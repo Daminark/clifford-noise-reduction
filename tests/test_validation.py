@@ -197,6 +197,7 @@ CASES: list[tuple[str, Callable[[], object], str]] = [
     ("Estimate shots", lambda: estimate(shots=10.0), "shots"),
     ("Estimate n", lambda: estimate(n=True), "n"),
     ("Estimate option", lambda: estimate(native_plus=1), "native_plus"),
+    ("Estimate given", lambda: estimate(given_checks=1), "given_checks"),
     (
         "estimate_direct shots",
         lambda: estimators.estimate_direct(CIRCUIT, 2, NOISE, 10.0, rng()),
@@ -205,6 +206,20 @@ CASES: list[tuple[str, Callable[[], object], str]] = [
     (
         "estimate_clinr noise",
         lambda: estimators.estimate_clinr(CIRCUIT, 2, 1, 1, 1e-3, 10, rng()),
+        "noise",
+    ),
+    (
+        "estimate_clinr_given shots",
+        lambda: estimators.estimate_clinr_given(
+            CIRCUIT, 2, clinr_checks(), NOISE, 10.0, rng()
+        ),
+        "shots",
+    ),
+    (
+        "estimate_cznr_given noise",
+        lambda: estimators.estimate_cznr_given(
+            CZ, 2, checks.draw_cznr_checks(CZ, 2, 1, 1, rng()), 1e-3, 10, rng()
+        ),
         "noise",
     ),
     ("NoiseModel rate", lambda: noise_models.NoiseModel("0.1", 0, 0, 0), "p1"),
