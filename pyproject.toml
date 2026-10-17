@@ -49,6 +49,33 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/clinr"]
 
+# An allowlist of the tracked top-level paths, so that a source distribution
+# built from a working tree carries what the repository does and nothing else.
+[tool.hatch.build.targets.sdist]
+only-include = [
+    ".git-blame-ignore-revs",
+    ".git_archival.txt",
+    ".gitattributes",
+    ".github",
+    ".gitignore",
+    ".mailmap",
+    ".pre-commit-config.yaml",
+    ".python-version",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "docs",
+    "noxfile.py",
+    "pyproject.toml",
+    "results",
+    "scripts",
+    "src",
+    "tests",
+    "uv.lock",
+]
+
 [tool.uv]
 # Rebuild the package when the commit or tags change, so its version is current.
 cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
